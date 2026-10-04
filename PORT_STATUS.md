@@ -69,6 +69,23 @@ iOS 15 退化为最接近的等价实现或 no-op：
 - `.github/workflows/build-ios15-ipa.yml`（GitHub Actions，macOS 构建 → 未签名 IPA）
 - `tools/build_ios15_local.sh`（本机 Mac 一键构建）
 
+### 7. FileProvider 扩展：从 iOS 15 构建中摘除
+`MinisFileProvider` 遵循的 `NSFileProviderReplicatedExtension`、`NSFileProviderRequest`、
+`trashContainer`、`NSFileProvider*Options` 全部是 **iOS 16 引入的 API 族**，
+在部署目标 15.4 下产生 25 个编译错误。
+
+把它移植到 iOS 15 等价于改写成旧的 `NSFileProviderExtension` 模型，属于结构性重构，
+在无法本地验证的条件下风险过高。因此本移植**将该目标从构建与内嵌中摘除**：
+
+- 从主 App 的 `dependencies` 移除 `E5FP00080`
+- 从 `Embed Foundation Extensions` 阶段移除 `MinisFileProvider.appex`
+- 删除对应的 `PBXTargetDependency` / `PBXContainerItemProxy` / `PBXBuildFile` 定义
+
+**代价**：iOS 15 上无法从系统「文件」App 浏览 Minis 工作区。
+App 内置的文件浏览器（`Views/Rootfs/FileBrowserView.swift`）不受影响，核心功能完整。
+
+**恢复方式**：把上述 4 处 pbxproj 改动还原，并把该目标部署目标设回 16.0 即可。
+
 ## 阻塞点
 **构建必须在 macOS 上完成**，当前环境为 Windows，且：
 - 本机无 Xcode / Swift / Go / gh
