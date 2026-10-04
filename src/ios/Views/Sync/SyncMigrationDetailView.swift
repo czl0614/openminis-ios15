@@ -193,14 +193,14 @@ struct SyncMigrationDetailView: View {
                     if vm.pendingPush > 0 {
                         MinisLabeledContent(AppLocalized("Pending push"), value: "\(vm.pendingPush)")
                         if vm.pendingPushNew > 0 {
-                            LabeledContent {
+                            MinisLabeledContent {
                                 Text("\(vm.pendingPushNew)").foregroundStyle(.secondary)
                             } label: {
                                 Text("· New writes").foregroundStyle(.secondary).font(.callout)
                             }
                         }
                         if vm.pendingPushMigration > 0 {
-                            LabeledContent {
+                            MinisLabeledContent {
                                 Text("\(vm.pendingPushMigration)").foregroundStyle(.secondary)
                             } label: {
                                 Text("· Migration backlog").foregroundStyle(.secondary).font(.callout)
@@ -235,7 +235,7 @@ struct SyncMigrationDetailView: View {
                vm.lastFailureMessage == nil, !vm.isCanceledByUser,
                vm.unmigratedHistoryCount > 0 {
                 Section {
-                    LabeledContent {
+                    MinisLabeledContent {
                         Text("\(vm.unmigratedHistoryCount)")
                             .foregroundStyle(.secondary)
                     } label: {

@@ -76,6 +76,17 @@ func AppLocalized(_ key: String.LocalizationValue, comment: StaticString? = nil)
 
 /// `LocalizedStringResource` overload, for call sites that already hold a
 /// resource (App Intents build these) rather than a literal key.
+///
+/// [iOS 15 移植] 必须标 `@available(iOS 16.0, *)`。
+/// `LocalizedStringResource` 本身是 iOS 16+ 类型。更重要的是：本函数与上面的
+/// `String.LocalizationValue` 重载都能接受字符串字面量，而 Swift 的重载决议
+/// 优先选择「不需要填充默认参数」的那个 —— 也就是本函数（上面那个带
+/// `comment: StaticKey? = nil`）。结果全工程 1171 处 `AppLocalized("…")`
+/// 字面量调用全部落到这里并报错。
+///
+/// 加上可用性标注后，字面量调用会自动回落到 `String.LocalizationValue` 版本。
+/// 该版本反而更正确：它会走 `AppBundle.current`，从而尊重 App 内的语言切换。
+@available(iOS 16.0, *)
 func AppLocalized(_ resource: LocalizedStringResource) -> String {
     // A LocalizedStringResource carries its own bundle reference, so it cannot
     // be re-pointed the way a literal key can. Resolve it as-is rather than

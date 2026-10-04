@@ -182,7 +182,7 @@ struct MinisLabeledContent<Label: View, Content: View>: View {
 
     var body: some View {
         if #available(iOS 16.0, *) {
-            LabeledContent { content } label: { label }
+            MinisLabeledContent { content } label: { label }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 label
@@ -194,7 +194,7 @@ struct MinisLabeledContent<Label: View, Content: View>: View {
 }
 
 extension MinisLabeledContent {
-    /// `LabeledContent { 内容 } label: { 标签 }` —— 自定义标签与自定义内容。
+    /// `MinisLabeledContent { 内容 } label: { 标签 }` —— 自定义标签与自定义内容。
     init(@ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
         self.init(label: label(), content: content())
     }
@@ -279,6 +279,19 @@ enum MinisPresentationDetent: Hashable {
         case .height(let value): return .height(value)
         }
     }
+
+    /// 反向映射：系统 `PresentationDetent` → 本枚举。
+    /// 只覆盖本工程实际用到的几种；其余（如 `.height` 之外的动态值）返回 nil。
+    @available(iOS 16.0, *)
+    init?(sdk: PresentationDetent) {
+        if sdk == .medium {
+            self = .medium
+        } else if sdk == .large {
+            self = .large
+        } else {
+            return nil
+        }
+    }
 }
 
 extension View {
@@ -288,6 +301,29 @@ extension View {
     func minisPresentationDetents(_ detents: Set<MinisPresentationDetent>) -> some View {
         if #available(iOS 16.0, *) {
             self.presentationDetents(Set(detents.map { $0.sdkValue }))
+        } else {
+            self
+        }
+    }
+
+    /// `presentationDetents(_:selection:)` 的兼容版本（带当前档位绑定）。
+    @ViewBuilder
+    func minisPresentationDetents(
+        _ detents: Set<MinisPresentationDetent>,
+        selection: Binding<MinisPresentationDetent>
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.presentationDetents(
+                Set(detents.map { $0.sdkValue }),
+                selection: Binding<PresentationDetent>(
+                    get: { selection.wrappedValue.sdkValue },
+                    set: { newValue in
+                        if let mapped = MinisPresentationDetent(sdk: newValue) {
+                            selection.wrappedValue = mapped
+                        }
+                    }
+                )
+            )
         } else {
             self
         }
@@ -415,6 +451,212 @@ extension View {
         }
     }
 }
+
+// MARK: - 11. 类型擦除形状（iOS 16 的 AnyShape / UnevenRoundedRectangle）
+
+/// `AnyShape`（iOS 16+）的兼容版本。
+///
+/// 用「把 `path(in:)` 闭包存下来」的方式做类型擦除，因此不依赖 iOS 16。
+/// 在所有系统版本上行为一致，无需 `#available` 分支。
+struct MinisAnyShape: Shape {
+    private let pathBuilder: (CGRect) -> Path
+
+    init<S: Shape>(_ shape: S) {
+        pathBuilder = { rect in shape.path(in: rect) }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        pathBuilder(rect)
+    }
+}
+
+/// `UnevenRoundedRectangle`（iOS 16+）的兼容版本。
+///
+/// 四角半径独立，用于聊天气泡这类「同侧圆角、相邻侧直角」的形状。
+/// 纯 `Path` 构造，iOS 13+ 可用。
+struct MinisUnevenRoundedRectangle: Shape {
+    var topLeadingRadius: CGFloat = 0
+    var bottomLeadingRadius: CGFloat = 0
+    var bottomTrailingRadius: CGFloat = 0
+    var topTrailingRadius: CGFloat = 0
+    /// 与系统 `UnevenRoundedRectangle` 保持参数一致；本实现按连续圆角绘制。
+    var style: RoundedCornerStyle = .continuous
+
+    func path(in rect: CGRect) -> Path {
+        let limit = min(rect.width, rect.height) / 2
+        let tl = min(max(topLeadingRadius, 0), limit)
+        let bl = min(max(bottomLeadingRadius, 0), limit)
+        let br = min(max(bottomTrailingRadius, 0), limit)
+        let tr = min(max(topTrailingRadius, 0), limit)
+
+        var path = Path()
+
+        // 从左上角之后开始，顺时针走一圈
+        path.move(to: CGPoint(x: rect.minX + tl, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
+        if tr > 0 {
+            path.addArc(center: CGPoint(x: rect.maxX - tr, y: rect.minY + tr),
+                        radius: tr,
+                        startAngle: .degrees(-90), endAngle: .degrees(0),
+                        clockwise: false)
+        }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
+        if br > 0 {
+            path.addArc(center: CGPoint(x: rect.maxX - br, y: rect.maxY - br),
+                        radius: br,
+                        startAngle: .degrees(0), endAngle: .degrees(90),
+                        clockwise: false)
+        }
+        path.addLine(to: CGPoint(x: rect.minX + bl, y: rect.maxY))
+        if bl > 0 {
+            path.addArc(center: CGPoint(x: rect.minX + bl, y: rect.maxY - bl),
+                        radius: bl,
+                        startAngle: .degrees(90), endAngle: .degrees(180),
+                        clockwise: false)
+        }
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tl))
+        if tl > 0 {
+            path.addArc(center: CGPoint(x: rect.minX + tl, y: rect.minY + tl),
+                        radius: tl,
+                        startAngle: .degrees(180), endAngle: .degrees(270),
+                        clockwise: false)
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - 12. 更多 iOS 16 视图修饰符
+
+extension View {
+    /// `View.fontWeight(_:)`（iOS 16+）的兼容版本。
+    ///
+    /// iOS 15 无等价物（`Font.weight` 可用，但无法从泛型 `View` 上取回当前字体），
+    /// 退化为 no-op。全工程 6 处调用，仅表现为文字不加粗。
+    @ViewBuilder
+    func minisFontWeight(_ weight: Font.Weight?) -> some View {
+        if #available(iOS 16.0, *) {
+            self.fontWeight(weight)
+        } else {
+            self
+        }
+    }
+
+    /// `toolbar(_:for:)`（iOS 16+）控制导航栏显隐的兼容版本。
+    /// iOS 15 回退为 `navigationBarHidden(_:)`。
+    @ViewBuilder
+    func minisToolbarVisibility(_ visibility: Visibility, for bar: MinisToolbarBar) -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbar(visibility, for: bar.sdkValue)
+        } else {
+            self.navigationBarHidden(visibility == .hidden)
+        }
+    }
+
+    /// `draggable(_:)`（iOS 16+）的兼容版本。iOS 15 上是 no-op
+    /// （失去跨 App / 跨窗口拖拽，不影响点击等交互）。
+    @ViewBuilder
+    func minisDraggable<T: Transferable>(_ payload: T) -> some View {
+        if #available(iOS 16.0, *) {
+            self.minisDraggable(payload)
+        } else {
+            self
+        }
+    }
+
+    /// `dropDestination(for:action:isTargeted:)`（iOS 16+）的兼容版本。
+    /// iOS 15 上是 no-op（失去拖放接收，其它交互不受影响）。
+    @ViewBuilder
+    func minisDropDestination<T: Transferable>(
+        for type: T.Type,
+        action: @escaping ([T], CGPoint) -> Bool,
+        isTargeted: @escaping (Bool) -> Void = { _ in }
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.minisDropDestination(for: type, action: action, isTargeted: isTargeted)
+        } else {
+            self
+        }
+    }
+
+    /// `onGeometryChange(for:of:action:)` 的兼容版本。
+    ///
+    /// 该 API 在新 SDK 上的可用版本较高，这里保守地用 iOS 18 作为分界，
+    /// 更低版本走 `GeometryReader` + `PreferenceKey` 的等价实现 ——
+    /// 两条路径都能拿到几何值，只是实现机制不同。
+    @ViewBuilder
+    func minisOnGeometryChange<T: Equatable>(
+        for type: T.Type,
+        of transform: @escaping (GeometryProxy) -> T,
+        action: @escaping (T) -> Void
+    ) -> some View {
+        if #available(iOS 18.0, *) {
+            self.onGeometryChange(for: type, of: transform, action: action)
+        } else {
+            self.background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MinisGeometryValueKey<T>.self,
+                        value: transform(proxy)
+                    )
+                }
+                .onPreferenceChange(MinisGeometryValueKey<T>.self) { value in
+                    action(value)
+                }
+            )
+        }
+    }
+}
+
+/// `toolbar(_:for:)` 的 bar 参数（系统的 `ToolbarPlacement` 在 iOS 16+ 才有该重载）。
+enum MinisToolbarBar {
+    case navigationBar
+    case tabBar
+    case bottomBar
+
+    @available(iOS 16.0, *)
+    var sdkValue: ToolbarPlacement {
+        switch self {
+        case .navigationBar: return .navigationBar
+        case .tabBar: return .tabBar
+        case .bottomBar: return .bottomBar
+        }
+    }
+}
+
+/// `minisOnGeometryChange` 回退路径用的 PreferenceKey。
+struct MinisGeometryValueKey<T: Equatable>: PreferenceKey {
+    static func defaultValue(in context: ViewDimensions) -> T? { nil }
+
+    static var defaultValue: T? { nil }
+
+    static func reduce(value: inout T?, nextValue: () -> T?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+// MARK: - 13. ShareLink（iOS 16）
+
+/// `ShareLink`（iOS 16+）的兼容版本。
+///
+/// iOS 15 退化为「复制到剪贴板」按钮 —— 该版本没有系统分享面板的 SwiftUI 入口，
+/// 而 `UIActivityViewController` 在 App 扩展中不可用，因此不能作为通用回退。
+struct MinisShareLink: View {
+    let item: URL
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            ShareLink(item: item)
+        } else {
+            Button {
+                UIPasteboard.general.url = item
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+        }
+    }
+}
+
 
 // MARK: - 10. 转场与 Sheet 尺寸（iOS 16 / 18）
 

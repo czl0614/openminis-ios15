@@ -397,15 +397,15 @@ private struct FolderSurface: ViewModifier {
     private var shape: AnyShape {
         switch kind {
         case .lone:
-            return AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            return MinisAnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         case .top:
-            return AnyShape(UnevenRoundedRectangle(
+            return MinisAnyShape(MinisUnevenRoundedRectangle(
                 topLeadingRadius: 16, bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0, topTrailingRadius: 16, style: .continuous))
         case .middle:
-            return AnyShape(Rectangle())
+            return MinisAnyShape(Rectangle())
         case .bottom:
-            return AnyShape(UnevenRoundedRectangle(
+            return MinisAnyShape(MinisUnevenRoundedRectangle(
                 topLeadingRadius: 0, bottomLeadingRadius: 16,
                 bottomTrailingRadius: 16, topTrailingRadius: 0, style: .continuous))
         }
@@ -476,10 +476,10 @@ private struct FolderCardBackground: ViewModifier {
 
     private var dropShape: AnyShape {
         isExpanded
-            ? AnyShape(UnevenRoundedRectangle(
+            ? MinisAnyShape(MinisUnevenRoundedRectangle(
                 topLeadingRadius: 16, bottomLeadingRadius: 0,
                 bottomTrailingRadius: 0, topTrailingRadius: 16, style: .continuous))
-            : AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            : MinisAnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     func body(content: Content) -> some View {
@@ -777,8 +777,8 @@ private struct FolderPickerSheet: View {
                     // One-sentence auto-grouping context (≤100 chars). Typed
                     // here or prefilled by AI Suggest; never shown in the
                     // list, editable later from Rename Group.
-                    TextField("Description (optional, guides auto-grouping)", text: $newFolderDesc, axis: .vertical)
-                        .lineLimit(1...2)
+                    TextField("Description (optional, guides auto-grouping)", text: $newFolderDesc)
+                        .lineLimit(2)
                         .font(.subheadline)
                         .onChange(of: newFolderDesc) { v in
                             if v.count > 100 { newFolderDesc = String(v.prefix(100)) }
@@ -811,7 +811,7 @@ private struct FolderPickerSheet: View {
                         Spacer()
                         Button("Create", action: createIfNamed)
                             .buttonStyle(.borderless)
-                            .fontWeight(.semibold)
+                            .minisFontWeight(.semibold)
                             .disabled(trimmedName.isEmpty || duplicateFolder != nil)
                     }
                     // [T-folder-duplicate-name] Name already taken. Says so, and
@@ -3283,7 +3283,7 @@ struct ContentView: View {
             // with a hand-rolled gesture sequence — the
             // gesture layer is where system gestures are
             // beaten (see the WebView sheet-dismiss fix).
-            .draggable(session.id)
+            .minisDraggable(session.id)
             .overlay {
                 if regeneratingTitleSessionId == session.id {
                     ZStack {
@@ -3292,10 +3292,14 @@ struct ContentView: View {
                     }
                 }
             }
-            .background(
-                NavigationLink(value: session.id) { EmptyView() }
-                    .opacity(0)
-            )
+            .background {
+                // iOS 15 没有值路由；该隐藏链接只为 iOS 16 的 path 推入服务，
+                // iOS 15 走 MinisLegacyCompactStack（splitList 直接写 selectedSessionId）。
+                if #available(iOS 16.0, *) {
+                    NavigationLink(value: session.id) { EmptyView() }
+                        .opacity(0)
+                }
+            }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
             .listRowBackground(Group {
@@ -3485,7 +3489,7 @@ struct ContentView: View {
                                 // with a hand-rolled gesture sequence — the
                                 // gesture layer is where system gestures are
                                 // beaten (see the WebView sheet-dismiss fix).
-                                .draggable(session.id)
+                                .minisDraggable(session.id)
                                 .overlay {
                                     if regeneratingTitleSessionId == session.id {
                                         ZStack {
@@ -3546,7 +3550,7 @@ struct ContentView: View {
                                             // container's bottom radii so it stays
                                             // wrapped by the corners.
                                             if isSessionHighlighted(session.id) {
-                                                UnevenRoundedRectangle(
+                                                MinisUnevenRoundedRectangle(
                                                     topLeadingRadius: 0,
                                                     bottomLeadingRadius: isLast ? 16 : 0,
                                                     bottomTrailingRadius: isLast ? 16 : 0,
@@ -4443,8 +4447,16 @@ struct ContentView: View {
             Section {
                 ForEach(entry.ids, id: \.self) { sessionId in
                     if let session = byId["\(entry.deviceId):\(sessionId)"] {
-                        NavigationLink(value: "remote:\(entry.deviceId):\(session.id)") {
-                            RemoteSessionRow(session: session)
+                        Group {
+                            if #available(iOS 16.0, *) {
+                                NavigationLink(value: "remote:\(entry.deviceId):\(session.id)") {
+                                    RemoteSessionRow(session: session)
+                                }
+                            } else {
+                                // iOS 15 没有值路由。远程会话行退化为不可点击，
+                                // 长按菜单（Fork Session）等其它交互保留。
+                                RemoteSessionRow(session: session)
+                            }
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
@@ -5293,7 +5305,7 @@ struct ContentView: View {
             // Dropping on a date-bucket header moves the sessions OUT of any
             // folder — the drag gesture works both directions, otherwise
             // moving out would still require a trip through the menu.
-            .dropDestination(for: String.self) { sessionIds, _ in
+            .minisDropDestination(for: String.self) { sessionIds, _ in
                 Task { @MainActor in
                     await ChatStore.shared.setFolder(nil, forSessions: sessionIds)
                     refreshSessionList()
@@ -5500,7 +5512,7 @@ struct ContentView: View {
         // ScrollViewReader anchor for the mini-bar's "back to header" jump.
         .id("folderHeader-\(group.folderId ?? "")")
         .listRowInsets(EdgeInsets())
-        .dropDestination(for: String.self) { sessionIds, _ in
+        .minisDropDestination(for: String.self) { sessionIds, _ in
             guard let fid = group.folderId else { return false }
             Task { @MainActor in
                 await ChatStore.shared.setFolder(fid, forSessions: sessionIds)
@@ -8044,7 +8056,7 @@ private struct AppearanceSettingsView: View {
                             if appLanguage == lang.id {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.blue)
-                                    .fontWeight(.semibold)
+                                    .minisFontWeight(.semibold)
                             }
                         }
                     }

@@ -50,9 +50,9 @@ struct HelperSheetTarget: Identifiable, Equatable {
 /// Three detents so the height is adjustable, opening at `.medium` so the
 /// opener stays visible behind it.
 struct HelperTranscriptSheetStyle: ViewModifier {
-    @State private var detent: PresentationDetent = .medium
+    @State private var detent: MinisPresentationDetent = .medium
 
-    static let detents: Set<PresentationDetent> = [.fraction(0.35), .medium, .large]
+    static let detents: Set<MinisPresentationDetent> = [.fraction(0.35), .medium, .large]
 
     func body(content: Content) -> some View {
         let base = content
@@ -147,7 +147,7 @@ struct HelperTranscriptPage: View {
             // the nested tool-sheet host re-bridges an EMPTY state to this same
             // navigation controller when its sheet dismisses, and the bar is
             // hidden with animated:false and never restored.
-            .toolbar(.visible, for: .navigationBar)
+            .minisToolbarVisibility(.visible, for: .navigationBar)
             .toolbar {
                 // [T-agent-transcript-navbar-lost] Declared INLINE, not from a
                 // `.background` host.
