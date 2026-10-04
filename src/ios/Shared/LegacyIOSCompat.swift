@@ -318,10 +318,13 @@ extension View {
     }
 
     /// `scrollIndicators(_:)` 的兼容版本。iOS 15 上是 no-op。
+    ///
+    /// 注意：`Visibility` 与 `ScrollIndicatorVisibility` 是两个不同的类型，
+    /// 不能直接互传，需要显式映射。
     @ViewBuilder
     func minisScrollIndicators(_ visibility: Visibility) -> some View {
         if #available(iOS 16.0, *) {
-            self.scrollIndicators(visibility)
+            self.scrollIndicators(visibility == .visible ? .visible : .hidden)
         } else {
             self
         }
@@ -369,13 +372,22 @@ enum MinisScrollDismissesKeyboardMode {
 // MARK: - 8. View.bold()
 
 extension View {
-    /// `View.bold()`（iOS 16+）的兼容版本，回退为等价的 `fontWeight(.bold)`。
+    /// `View.bold()`（iOS 16+）的兼容版本。
+    ///
+    /// iOS 15 上退化为 no-op：该版本既没有 `View.bold()`，也没有
+    /// `View.fontWeight()`（后者同为 iOS 16+，只有 `Text.fontWeight` 是 iOS 13+，
+    /// 而本 shim 的 `self` 是泛型 `View`，落不到 `Text` 那个重载上）。
+    ///
+    /// 全工程只有 3 处调用（2 个 Button + 1 个已显式设过字体的视图），
+    /// 在 iOS 15 上仅表现为这几处文字不加粗，不影响布局与功能。
+    /// 之所以不用 `.font(.body.bold())` 兜底：那会把字号强制成 body，
+    /// 覆盖调用点已有的字体设置，反而引入可见的观感偏差。
     @ViewBuilder
     func minisBold() -> some View {
         if #available(iOS 16.0, *) {
             self.bold()
         } else {
-            self.fontWeight(.bold)
+            self
         }
     }
 }

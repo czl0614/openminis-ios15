@@ -36,6 +36,25 @@ def api(path, raw=False):
     return json.loads(data.decode("utf-8"))
 
 
+def fetch_job_log(job_id):
+    """用 curl 抓取作业日志。
+
+    日志接口会 302 跳到对象存储，urllib 转发 Authorization 头会导致
+    403（签名不匹配），而 curl 在跨主机重定向时会自动去掉该头。
+    """
+    import subprocess
+
+    url = f"{API}/repos/{OWNER}/{REPO}/actions/jobs/{job_id}/logs"
+    res = subprocess.run(
+        ["curl", "-sL", "-H", f"Authorization: token {TOKEN}", url],
+        capture_output=True,
+        timeout=300,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.decode("utf-8", errors="replace")[:300])
+    return res.stdout.decode("utf-8", errors="replace")
+
+
 def main():
     started = time.time()
     last_line = ""
@@ -87,10 +106,7 @@ def main():
                 for j in jobs:
                     if j.get("conclusion") == "failure":
                         try:
-                            log = api(
-                                f"/repos/{OWNER}/{REPO}/actions/jobs/{j['id']}/logs",
-                                raw=True,
-                            ).decode("utf-8", errors="replace")
+                            log = fetch_job_log(j["id"])
                             out = f"build_failure_log_{RUN_ID}.txt"
                             with open(out, "w", encoding="utf-8") as fh:
                                 fh.write(log)
@@ -99,7 +115,7 @@ def main():
                             errs = [
                                 ln
                                 for ln in log.split("\n")
-                                if ("error:" in ln.lower() or "错误" in ln)
+                                if ("error:" in ln.lower() or "FAILED" in ln or "ninja: error" in ln)
                                 and "warning" not in ln.lower()
                             ]
                             print(f"\n--- 错误行（共 {len(errs)} 条，前 60 条）---")
