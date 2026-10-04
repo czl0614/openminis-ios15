@@ -553,27 +553,36 @@ extension View {
         }
     }
 
-    /// `draggable(_:)`（iOS 16+）的兼容版本。iOS 15 上是 no-op
-    /// （失去跨 App / 跨窗口拖拽，不影响点击等交互）。
+    /// `draggable(_:)`（iOS 16+）的兼容版本。
+    ///
+    /// 刻意**不做成泛型**：`Transferable` 协议本身是 iOS 16+，把它当作泛型约束
+    /// 会让函数本身无法在 iOS 15 上声明。本工程只有 `String` 载荷，故按具体类型提供。
+    ///
+    /// iOS 15 回退到 `.onDrag`（iOS 13+），因此拖拽在旧系统上**真的可用**，
+    /// 而不是退化成 no-op。
     @ViewBuilder
-    func minisDraggable<T: Transferable>(_ payload: T) -> some View {
+    func minisDraggable(_ payload: String) -> some View {
         if #available(iOS 16.0, *) {
             self.draggable(payload)
         } else {
-            self
+            self.onDrag { NSItemProvider(object: payload as NSString) }
         }
     }
 
     /// `dropDestination(for:action:isTargeted:)`（iOS 16+）的兼容版本。
-    /// iOS 15 上是 no-op（失去拖放接收，其它交互不受影响）。
+    ///
+    /// 同样不做成泛型（理由见上）。iOS 15 上是 no-op：
+    /// 该版本只有 `.onDrop(of:isTargeted:perform:)`，其回调拿到的是异步的
+    /// `NSItemProvider`，无法在不引入异步加载与类型还原的前提下等价替代。
+    /// 影响面：会话行拖入文件夹这一个交互，其它功能不受影响。
     @ViewBuilder
-    func minisDropDestination<T: Transferable>(
-        for type: T.Type,
-        action: @escaping ([T], CGPoint) -> Bool,
+    func minisDropDestination(
+        for type: String.Type,
+        action: @escaping ([String], CGPoint) -> Bool,
         isTargeted: @escaping (Bool) -> Void = { _ in }
     ) -> some View {
         if #available(iOS 16.0, *) {
-            self.dropDestination(for: type, action: action, isTargeted: isTargeted)
+            self.dropDestination(for: String.self, action: action, isTargeted: isTargeted)
         } else {
             self
         }
