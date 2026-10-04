@@ -62,7 +62,7 @@ iOS 15 退化为最接近的等价实现或 no-op：
 
 ### 5. 工程配置
 - pbxproj：4 个目标的部署目标 → 15.4（新文件已注册进 4 个目标）
-- `deps/build_rclone_ios.sh`：`-miphoneos-version-min=16.0` → 待改（当前 16.0）
+- `deps/build_rclone_ios.sh`：`-miphoneos-version-min=16.0` → 15.4
 - 未开启「警告即错误」，`NavigationView` 等废弃警告不会中断构建
 
 ### 6. 构建流水线

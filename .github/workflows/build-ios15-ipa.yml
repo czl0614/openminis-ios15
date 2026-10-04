@@ -19,6 +19,9 @@ on:
         required: false
         default: 'macos-15'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ github.event.inputs.runner || 'macos-15' }}
@@ -128,6 +131,19 @@ jobs:
           name: Minis-ios15.4-unsigned-ipa
           path: out/*.ipa
           if-no-files-found: error
+
+      - name: 发布 Release（便于直接下载 IPA）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ios15.4-b${{ github.run_number }}" out/*.ipa \
+            --title "OpenMinis iOS 15.4 移植版 build ${{ github.run_number }}" \
+            --notes "OpenMinis 的 iOS 15.4 降级移植版（未签名 IPA）。
+
+          - 最低系统版本：iOS 15.4
+          - 安装方式：TrollStore / 自签工具
+          - 构建提交：${{ github.sha }}
+          - 上游项目：https://github.com/OpenMinis/OpenMinis （GPLv3）"
 
       - name: 失败时上传构建日志
         if: failure()
