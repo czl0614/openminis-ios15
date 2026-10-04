@@ -1032,7 +1032,15 @@ extension AIChatViewModel {
                 guard !Task.isCancelled, let self, child.isProcessing,
                       job.state == .running else { return }
                 let info = SessionActivityTracker.shared.sessionToolInfo[childId]
-                let lastMessage = SendPromptIntent.extractResponseText(from: child)
+                // iOS 15 回退：SendPromptIntent 依赖 AppIntents（iOS 16+），
+                // 该版本不可用。此时进度签名退化为不含回复文本，仅影响
+                // 进度去重的精细度，不影响任务执行。
+                let lastMessage: String = {
+                    if #available(iOS 16.0, *) {
+                        return SendPromptIntent.extractResponseText(from: child)
+                    }
+                    return ""
+                }()
                 let signature = "\(info?.toolName ?? "")|\(info?.toolStatus ?? "")|\(info?.loopIteration ?? 0)|\(lastMessage.prefix(200))"
                 if onlyOnChange, signature == job.lastProgressSignature {
                     logger.info("[delegate_task] progress \(job.id.prefix(8)) unchanged — skipped")

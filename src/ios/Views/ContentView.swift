@@ -1438,8 +1438,6 @@ struct ContentView: View {
     @State private var sessionRefreshCooldownDeadline: Date?
     /// Whether the initial session load has completed (prevents showing the list before we decide to auto-navigate).
     @State private var didInitialLoad = false
-    /// Controls sidebar visibility on iPad (automatic handles iPhone collapse).
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     /// Launch screen preference: 0=Auto, 1=Last Session, 2=New Chat.
     @AppStorage("launchScreen") private var launchScreen: Int = 0
@@ -2461,6 +2459,7 @@ struct ContentView: View {
 
     // MARK: - Split Layout (iPad / wide window)
 
+    @ViewBuilder
     private var splitLayout: some View {
         // [T-ios-gh29-font-scale-split-column] App-base font scale for the iPad
         // split view. `appFontScale()` is environment-based (`.dynamicTypeSize`),
@@ -2473,18 +2472,52 @@ struct ContentView: View {
         // session-switch / tap lag is a separate issue (ChatSession Array `==`
         // in SwiftUI's transaction flush; an A/B test confirmed the font
         // injection is not its cause), so per-column injection is safe here.
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sessionList(useNavigationLinks: false)
-                .appFontScale()
-        } detail: {
-            detailView
-                .appFontScale()
+        if #available(iOS 16.0, *) {
+            NavigationSplitView {
+                sessionList(useNavigationLinks: false)
+                    .appFontScale()
+            } detail: {
+                detailView
+                    .appFontScale()
+            }
+        } else {
+            // iOS 15 没有 NavigationSplitView。宽屏（iPad / Mac）退化为
+            // 紧凑单列布局：列表与聊天页之间走 stackLayout 的单层栈。
+            stackLayout
         }
     }
 
     // MARK: - Stack Layout (iPhone / narrow window)
 
+    @ViewBuilder
     private var stackLayout: some View {
+        if #available(iOS 16.0, *) {
+            stackLayoutModern
+        } else {
+            // iOS 15 回退路径。
+            //
+            // 该版本的 SwiftUI 没有值路由（NavigationStack(path:) /
+            // navigationDestination / NavigationLink(value:)），因此这里
+            // 改用一个单层手动栈：直接复用 iPad 双列布局已经在用的
+            // splitList（点击行写入 selectedSessionId）与 detailView。
+            // 上游 iPhone 紧凑布局的路径深度实际恒为 1，所以两者等价。
+            MinisLegacyCompactStack(selection: $selectedSessionId) {
+                sessionList(useNavigationLinks: false)
+            } detail: { _ in
+                detailView
+            }
+            // 深链 / 分享等流程只写 navigationPath，这里把它们同步到
+            // selectedSessionId，保证 iOS 15 上两条驱动源始终一致。
+            .onChange(of: navigationPath) { newPath in
+                let target = newPath.last
+                if selectedSessionId != target {
+                    selectedSessionId = target
+                }
+            }
+        }
+    }
+
+    private var stackLayoutModern: some View {
         MinisNavStackPath(path: $navigationPath) {
             sessionList(useNavigationLinks: true)
                 .minisNavigationDestination(for: String.self) { id in
