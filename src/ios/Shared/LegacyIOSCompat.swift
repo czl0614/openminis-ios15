@@ -182,7 +182,7 @@ struct MinisLabeledContent<Label: View, Content: View>: View {
 
     var body: some View {
         if #available(iOS 16.0, *) {
-            MinisLabeledContent { content } label: { label }
+            LabeledContent { content } label: { label }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 label
@@ -558,7 +558,7 @@ extension View {
     @ViewBuilder
     func minisDraggable<T: Transferable>(_ payload: T) -> some View {
         if #available(iOS 16.0, *) {
-            self.minisDraggable(payload)
+            self.draggable(payload)
         } else {
             self
         }
@@ -573,7 +573,7 @@ extension View {
         isTargeted: @escaping (Bool) -> Void = { _ in }
     ) -> some View {
         if #available(iOS 16.0, *) {
-            self.minisDropDestination(for: type, action: action, isTargeted: isTargeted)
+            self.dropDestination(for: type, action: action, isTargeted: isTargeted)
         } else {
             self
         }
@@ -601,7 +601,7 @@ extension View {
                     )
                 }
                 .onPreferenceChange(MinisGeometryValueKey<T>.self) { value in
-                    action(value)
+                    if let value { action(value) }
                 }
             )
         }
@@ -626,8 +626,6 @@ enum MinisToolbarBar {
 
 /// `minisOnGeometryChange` 回退路径用的 PreferenceKey。
 struct MinisGeometryValueKey<T: Equatable>: PreferenceKey {
-    static func defaultValue(in context: ViewDimensions) -> T? { nil }
-
     static var defaultValue: T? { nil }
 
     static func reduce(value: inout T?, nextValue: () -> T?) {
