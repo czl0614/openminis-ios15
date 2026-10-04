@@ -118,7 +118,7 @@ struct BrowserBenchTestView: View {
     }()
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             ScrollViewReader { proxy in
                 List {
                     ForEach(vm.logs) { entry in
@@ -156,10 +156,10 @@ struct BrowserBenchTestView: View {
             .navigationTitle("Browser Bench Test")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button(vm.isRunning ? "Stop" : "Start") {
                         if vm.isRunning {
                             vm.stop()

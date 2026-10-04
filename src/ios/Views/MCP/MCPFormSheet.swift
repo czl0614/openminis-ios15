@@ -94,7 +94,7 @@ struct MCPFormSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             Form {
                 Section {
                     TextField(AppLocalized("Server name"), text: $name)
@@ -125,7 +125,7 @@ struct MCPFormSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(AppLocalized("Cancel")) { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Menu {
                         Button {
                             // Defer the side effect to the next runloop tick: on

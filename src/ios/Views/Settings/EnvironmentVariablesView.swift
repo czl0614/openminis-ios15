@@ -65,7 +65,7 @@ struct EnvironmentVariablesView: View {
         .navigationTitle("Environment Variables")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .minisTopBarTrailing) {
                 Button {
                     showingAddSheet = true
                 } label: {
@@ -228,7 +228,7 @@ private struct EnvVarFormSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             Form {
                 Section {
                     TextField("NAME", text: Binding(
@@ -271,7 +271,7 @@ private struct EnvVarFormSheet: View {
                         TextEditor(text: $note)
                             .frame(minHeight: 80)
                             .focused($focusedField, equals: .note)
-                            .scrollContentBackground(.hidden)
+                            .minisScrollContentBackground(.hidden)
                     }
                 }
 
@@ -308,7 +308,7 @@ private struct EnvVarFormSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .minisPresentationDetents([.medium, .large])
         .alert(
             AppLocalized("Delete this variable?"),
             isPresented: $showingDeleteConfirm

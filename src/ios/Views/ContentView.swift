@@ -764,7 +764,7 @@ private struct FolderPickerSheet: View {
     private var sessionCount: Int { sessionIds.count }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 Section {
                     HStack {
@@ -949,7 +949,7 @@ private struct FolderPickerSheet: View {
                              : LocalizedStringKey("Move \(sessionCount) to Group"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Cancel") { dismiss() }
                 }
             }
@@ -1079,7 +1079,7 @@ private let rowHeightLog = AppLogger(category: "RowHeight")
 /// Already ruled out, do not retry: `.scrollEdgeEffectStyle(.hard)` (the style
 /// applies but the height is unchanged, and it does not cover sticky headers —
 /// same report in Apple forums thread/795159); an opaque `.background` plus
-/// `.scrollContentBackground(.hidden)` (the list background is not what is
+/// `.minisScrollContentBackground(.hidden)` (the list background is not what is
 /// sampled); mutating the effect view's hidden/alpha/frame at runtime (the
 /// system rebuilds and restores it on every layout, so the experiment shows
 /// nothing).
@@ -1124,8 +1124,8 @@ struct MacOS27OpaqueNavigationBar<S: ShapeStyle>: ViewModifier {
         if #available(iOS 26.0, *), MacOS27GlassWorkaround.isActive {
             content
                 .scrollEdgeEffectHidden(true, for: .top)
-                .toolbarBackground(background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .minisToolbarBackground(background)
+                .minisToolbarBackground(.visible)
         } else {
             content
         }
@@ -1515,7 +1515,7 @@ struct ContentView: View {
     /// Whether the current window is wide enough for two-column layout.
     @State private var isWideLayout = false
     /// Navigation path for stack (compact) layout.
-    @State private var navigationPath = NavigationPath()
+    @State private var navigationPath: [String] = []
     /// Tracks the session ID currently visible on the compact navigation stack.
     @State private var currentStackSessionId: String?
     /// [T-ios-stacknav-transition-attributegraph-race] Compact-layout analogue
@@ -1546,7 +1546,7 @@ struct ContentView: View {
     @State private var consumedQuickActionTrigger: Int = 0
 
     /// Set when `handleNewChatRequest()` had to pop the iPhone
-    /// NavigationStack before it could open the new draft session.
+    /// MinisNavStack before it could open the new draft session.
     /// `onChange(of: navigationPath.count == 0)` watches this and
     /// dispatches the new-draft open once the pop has fully settled.
     @State private var pendingNewChatAfterPop: Bool = false
@@ -1596,7 +1596,7 @@ struct ContentView: View {
     ///
     /// Carries the deferral instant so a stale request can be dropped rather
     /// than flushed — see `pendingBackgroundNavigationTTL`.
-    @State private var pendingBackgroundNavigation: (path: NavigationPath, deferredAt: Date)?
+    @State private var pendingBackgroundNavigation: (path: [String], deferredAt: Date)?
 
     /// [T-ios-bg-nav-push-watchdog] How long a deferred push stays valid.
     ///
@@ -1683,7 +1683,7 @@ struct ContentView: View {
         .onAppear {
             if quickActionRouter.newChatTrigger != consumedQuickActionTrigger {
                 consumedQuickActionTrigger = quickActionRouter.newChatTrigger
-                // Defer one runloop so the NavigationStack body has a
+                // Defer one runloop so the MinisNavStack body has a
                 // chance to attach `$navigationPath` before we append to
                 // it — otherwise the append on a freshly-mounted stack
                 // can be lost.
@@ -1709,7 +1709,7 @@ struct ContentView: View {
             // `.id(appLanguage)` rebuild above) — would leave the push stranded
             // with no later transition to release it. Deferred one runloop for
             // the same reason the quick-action path above is: the
-            // NavigationStack must have attached `$navigationPath` first.
+            // MinisNavStack must have attached `$navigationPath` first.
             DispatchQueue.main.async {
                 flushPendingBackgroundNavigation()
             }
@@ -1820,7 +1820,7 @@ struct ContentView: View {
             }
         }
         .fullScreenCover(isPresented: $showTerminal) {
-            NavigationStack {
+            MinisNavStack {
                 ISHTerminalView(showCloseButton: true)
             }
         }
@@ -1832,10 +1832,10 @@ struct ContentView: View {
             case .settings:
                 SettingsSheet(showTerminal: $showTerminal)
             case .rootfsManagement:
-                NavigationStack {
+                MinisNavStack {
                     RootfsManagementView()
                         .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
+                            ToolbarItem(placement: .minisTopBarTrailing) {
                                 Button("Done") { activeToolSheet = nil }
                             }
                         }
@@ -1843,14 +1843,14 @@ struct ContentView: View {
             case .browser:
                 BrowserSheetView(pool: browserPool)
             case .browserManagement:
-                NavigationStack {
+                MinisNavStack {
                     BrowserManagementView(pool: browserPool)
                 }
             case .syncMigrationDetail:
-                NavigationStack {
+                MinisNavStack {
                     SyncMigrationDetailView()
                         .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
+                            ToolbarItem(placement: .minisTopBarTrailing) {
                                 Button("Done") { activeToolSheet = nil }
                             }
                         }
@@ -1876,7 +1876,7 @@ struct ContentView: View {
             .onAppear {
                 print("[DELETE] Sheet appeared. singleDeleteInfo is \(singleDeleteInfo == nil ? "nil" : "non-nil, sessionCount=\(singleDeleteInfo!.sessionCount)")")
             }
-            .presentationDetents([.medium])
+            .minisPresentationDetents([.medium])
         }
         .sheet(item: $sessionToEdit) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
@@ -1888,7 +1888,7 @@ struct ContentView: View {
                 }
                 sessionToEdit = nil
             }
-            .presentationDetents([.medium])
+            .minisPresentationDetents([.medium])
         }
         .sheet(isPresented: $showDeleteConfirm, onDismiss: {
             if deleteInfo == nil {
@@ -1905,7 +1905,7 @@ struct ContentView: View {
                 deleteSelectedSessions()
                 showDeleteConfirm = false
             }
-            .presentationDetents([.medium])
+            .minisPresentationDetents([.medium])
         }
         .sheet(isPresented: $showExportPreview) {
             ExportPreviewSheet(fileURL: exportFileURL, previewURL: exportPreviewURL, summary: exportSummary)
@@ -1940,7 +1940,7 @@ struct ContentView: View {
                 if req.fromMultiSelect { folderMoveApplied = true }
                 folderPickerRequest = nil
             }
-            .presentationDetents([.medium, .large])
+            .minisPresentationDetents([.medium, .large])
         }
         .modifier(FolderAlertsModifier(
             folderToRename: $folderToRename,
@@ -2485,9 +2485,9 @@ struct ContentView: View {
     // MARK: - Stack Layout (iPhone / narrow window)
 
     private var stackLayout: some View {
-        NavigationStack(path: $navigationPath) {
+        MinisNavStackPath(path: $navigationPath) {
             sessionList(useNavigationLinks: true)
-                .navigationDestination(for: String.self) { id in
+                .minisNavigationDestination(for: String.self) { id in
                     // `.id(id)` mirrors detailView (iPad): navigationDestination
                     // views are identified by stack depth, not path value, so
                     // replacing the top element in place (menu "New Chat" swaps
@@ -3898,7 +3898,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        ToolbarItem(placement: .topBarLeading) {
+        ToolbarItem(placement: .minisTopBarLeading) {
             if isSelecting {
                 Button("Cancel") {
                     isSelecting = false
@@ -3912,7 +3912,7 @@ struct ContentView: View {
                 }
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .minisTopBarTrailing) {
             if isSelecting {
                 Button(selectedIds.count == sessions.count ? "Deselect All" : "Select All") {
                     if selectedIds.count == sessions.count {
@@ -3930,7 +3930,7 @@ struct ContentView: View {
                 }
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .minisTopBarTrailing) {
             if !isSelecting {
                 Menu {
                     Button {
@@ -4036,7 +4036,7 @@ struct ContentView: View {
     ///      root WITHOUT animation — animated transitions race the
     ///      subsequent `openSession()` and the new chat sometimes never
     ///      appears (push coalesced into the running pop).
-    ///   2. Once the unwind has settled (NavigationStack path empty on
+    ///   2. Once the unwind has settled (MinisNavStack path empty on
     ///      iPhone, `selectedSessionId == nil` on iPad), open the new
     ///      draft session.
     ///   3. AIChatView's onAppear then consumes any
@@ -4066,7 +4066,7 @@ struct ContentView: View {
         if isWideLayout {
             openSession(newId)
         } else {
-            commitNavigationPath(NavigationPath([newId]))
+            commitNavigationPath([newId])
             currentStackSessionId = newId
         }
     }
@@ -4100,7 +4100,7 @@ struct ContentView: View {
             if isWideLayout {
                 selectedSessionId = nil
             } else {
-                navigationPath = NavigationPath()
+                navigationPath = []
                 currentStackSessionId = nil
             }
         }
@@ -4119,7 +4119,7 @@ struct ContentView: View {
         if isWideLayout {
             openSession(newId)
         } else {
-            commitNavigationPath(NavigationPath([newId]))
+            commitNavigationPath([newId])
             currentStackSessionId = newId
         }
         QuickActionWorkflow.shared.attachTargetSession(newId)
@@ -4152,7 +4152,7 @@ struct ContentView: View {
     /// `previousStackSessionId` stays in lockstep because it is maintained by
     /// the `onChange(of: navigationPath)` observer, which simply runs later —
     /// when the deferred path is actually committed.
-    private func commitNavigationPath(_ newPath: NavigationPath) {
+    private func commitNavigationPath(_ newPath: [String]) {
         // [T-share-first-tap-no-response] `.inactive` is NOT the state this
         // gate was built for. The watchdog kills it prevents come from a push
         // running AIChatView's whole first layout while the app is genuinely
@@ -4221,7 +4221,7 @@ struct ContentView: View {
             return
         }
         searchFocused = false
-        commitNavigationPath(NavigationPath([id]))
+        commitNavigationPath([id])
         currentStackSessionId = id
     }
 
@@ -4603,12 +4603,12 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
         .padding(.horizontal, 32)
         .sheet(isPresented: $showAddProvider) {
-            NavigationStack {
+            MinisNavStack {
                 AddProviderView()
             }
         }
         .sheet(isPresented: $showSelectModels) {
-            NavigationStack {
+            MinisNavStack {
                 OnboardingModelSelectionView()
             }
         }
@@ -4617,7 +4617,7 @@ struct ContentView: View {
             // the Restore tab. Not auto-dismissed on success — the result
             // report is worth reading; the steps above refresh on their own
             // (restore reloads ProviderConfigStore and the session list).
-            NavigationStack {
+            MinisNavStack {
                 BackupAndRestoreView(initialTab: .restore)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -6295,7 +6295,7 @@ private struct DeleteConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             VStack(spacing: 0) {
                 if isLoading || info == nil {
                     Spacer()
@@ -6419,7 +6419,7 @@ private struct ExportPreviewSheet: View {
     private let previewLimit = 10000
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             VStack(spacing: 0) {
                 // Preview — summary for multi-select, full content for single.
                 if let summary {
@@ -6480,7 +6480,7 @@ private struct ExportPreviewSheet: View {
             .navigationTitle(AppLocalized("Export Preview"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button(AppLocalized("Done")) { dismiss() }
                 }
             }
@@ -7478,7 +7478,7 @@ struct SessionEditSheet: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 Section("Title") {
                     TextField("Session title", text: $editTitle)
@@ -7540,7 +7540,7 @@ struct SessionEditSheet: View {
                         guard !title.isEmpty else { return }
                         onSave(title, editCategory.isEmpty ? nil : editCategory)
                     }
-                    .bold()
+                    .minisBold()
                     .disabled(editTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -8104,11 +8104,11 @@ private struct SettingsSheet: View {
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
-    @State private var navPath = NavigationPath()
+    @State private var navPath: [SettingsDestination] = []
     @State private var showFeedbackDialog = false
 
     var body: some View {
-        NavigationStack(path: $navPath) {
+        MinisNavStackPath(path: $navPath) {
             List {
                 Section {
                     NavigationLink {
@@ -8441,11 +8441,11 @@ private struct SettingsSheet: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
-            .navigationDestination(for: SettingsDestination.self) { dest in
+            .minisNavigationDestination(for: SettingsDestination.self) { dest in
                 switch dest {
                 case .providers:
                     ProviderInstancesView()
@@ -8534,7 +8534,7 @@ private struct SettingsSheet: View {
     }
 
     /// Translate `DeepLinkCoordinator.pendingSettingsTarget` into a
-    /// NavigationStack push and clear the pending value. Called from
+    /// MinisNavStack push and clear the pending value. Called from
     /// `onAppear` (cold-start deep link) and `onChange` (deep link
     /// arriving while the sheet is already open).
     ///
@@ -8546,7 +8546,7 @@ private struct SettingsSheet: View {
         // Reset path so deep links are predictable: a deep link always
         // lands on the requested destination as the only stack entry,
         // not on top of whatever the user was browsing earlier.
-        navPath = NavigationPath()
+        navPath = []
         switch target {
         case .home:
             break // already at Settings root

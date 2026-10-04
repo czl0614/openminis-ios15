@@ -122,7 +122,7 @@ struct BrowserHistoryView: View {
     @State private var showClearConfirm = false
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             Group {
                 if historyStore.entries.isEmpty {
                     emptyState
@@ -133,14 +133,14 @@ struct BrowserHistoryView: View {
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     if !historyStore.entries.isEmpty {
                         Button("Clear", role: .destructive) {
                             showClearConfirm = true
                         }
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }

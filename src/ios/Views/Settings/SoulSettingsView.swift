@@ -46,13 +46,13 @@ struct SoulSettingsView: View {
             }
 
             Section(AppLocalized("Identity")) {
-                LabeledContent(AppLocalized("Name")) {
+                MinisLabeledContent(AppLocalized("Name")) {
                     TextField("Minis", text: $name)
                         .multilineTextAlignment(.trailing)
                         .textInputAutocapitalization(.words)
                         .submitLabel(.done)
                 }
-                LabeledContent(AppLocalized("Style")) {
+                MinisLabeledContent(AppLocalized("Style")) {
                     TextField(AppLocalized("e.g. Warm, direct, opinionated"), text: $style)
                         .multilineTextAlignment(.trailing)
                 }
@@ -111,7 +111,7 @@ struct SoulSettingsView: View {
         .navigationTitle(AppLocalized("Soul"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .minisTopBarTrailing) {
                 Button(AppLocalized("Save")) { save() }
                     .disabled(!isDirty || isBodyOverLimit)
             }
@@ -246,7 +246,7 @@ struct SoulSettingsView: View {
             TextEditor(text: $bodyText)
                 .frame(minHeight: 220)
                 .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
+                .minisScrollContentBackground(.hidden)
             // SwiftUI's TextEditor has no native placeholder. We render
             // a greyed hint on top when the body is empty + not being
             // typed into. allowsHitTesting(false) so taps fall through
@@ -423,7 +423,7 @@ private struct SoulEmojiPickerSheet: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             VStack(spacing: 20) {
                 // Live preview at the size the chat header actually uses, so
                 // the user judges the glyph at its real scale rather than at
@@ -482,10 +482,10 @@ private struct SoulEmojiPickerSheet: View {
             .navigationTitle(AppLocalized("Choose Emoji"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     Button(AppLocalized("Cancel")) { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button(AppLocalized("Set")) {
                         onPick(draft)
                         dismiss()
@@ -494,7 +494,7 @@ private struct SoulEmojiPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.height(380)])
+        .minisPresentationDetents([.height(380)])
     }
 
     /// Keep at most one emoji, preferring whatever the user just added.

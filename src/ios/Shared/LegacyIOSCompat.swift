@@ -194,6 +194,11 @@ struct MinisLabeledContent<Label: View, Content: View>: View {
 }
 
 extension MinisLabeledContent {
+    /// `LabeledContent { 内容 } label: { 标签 }` —— 自定义标签与自定义内容。
+    init(@ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
+        self.init(label: label(), content: content())
+    }
+
     /// `LabeledContent("标题") { 自定义内容 }` —— 字面量标题，走本地化。
     init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) where Label == Text {
         self.init(label: Text(title), content: content())
@@ -374,3 +379,68 @@ extension View {
         }
     }
 }
+
+// MARK: - 9. 符号动画（iOS 17）
+
+extension View {
+    /// `symbolEffect(.pulse)`（iOS 17+）的兼容版本。iOS 15/16 上是 no-op。
+    @ViewBuilder
+    func minisSymbolEffectPulse() -> some View {
+        if #available(iOS 17.0, *) {
+            self.symbolEffect(.pulse)
+        } else {
+            self
+        }
+    }
+
+    /// `symbolEffect(.pulse, options: .repeating, isActive:)` 的兼容版本。
+    @ViewBuilder
+    func minisSymbolEffectPulseRepeating(isActive: Bool) -> some View {
+        if #available(iOS 17.0, *) {
+            self.symbolEffect(.pulse, options: .repeating, isActive: isActive)
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - 10. 转场与 Sheet 尺寸（iOS 16 / 18）
+
+/// `ContentTransition` 的兼容版本（系统类型为 iOS 16+）。
+enum MinisContentTransition {
+    case numericText
+    case interpolate
+    case identity
+
+    @available(iOS 16.0, *)
+    var sdkValue: ContentTransition {
+        switch self {
+        case .numericText: return .numericText()
+        case .interpolate: return .interpolate
+        case .identity: return .identity
+        }
+    }
+}
+
+extension View {
+    /// `contentTransition(_:)` 的兼容版本。iOS 15 上是 no-op。
+    @ViewBuilder
+    func minisContentTransition(_ transition: MinisContentTransition) -> some View {
+        if #available(iOS 16.0, *) {
+            self.contentTransition(transition.sdkValue)
+        } else {
+            self
+        }
+    }
+
+    /// `presentationSizing(.page)`（iOS 18+）的兼容版本。iOS 15/16/17 上是 no-op。
+    @ViewBuilder
+    func minisPresentationSizingPage() -> some View {
+        if #available(iOS 18.0, *) {
+            self.presentationSizing(.page)
+        } else {
+            self
+        }
+    }
+}
+

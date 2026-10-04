@@ -745,7 +745,7 @@ struct MinisSafariView: View {
                 .padding(.bottom, 18) // clears the home-indicator gutter
         }
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .minisPersistentSystemOverlays(.hidden)
         .preferredColorScheme(appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil)
         .sheet(isPresented: $showShareSheet) {
             MinisShareSheet(url: shareURL)
@@ -855,7 +855,7 @@ struct MinisLinkPreviewView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             ReusableWebView(webView: holder.webView)
                 // [T-webview-preview-swipe-dismiss] Arbitrate the sheet's
                 // interactive-dismiss pan against page content at the gesture
@@ -873,7 +873,7 @@ struct MinisLinkPreviewView: View {
                 }
                 .onAppear { holder.startIfNeeded() }
                 // Only ignore the keyboard inset — keeping the top safe area
-                // so the NavigationStack's navigation bar reliably pushes
+                // so the MinisNavStack's navigation bar reliably pushes
                 // page content down instead of floating over it. Used to be
                 // `.ignoresSafeArea()`: inside a `.sheet` that happened to
                 // work because the sheet chrome provided the inset anyway,
@@ -884,8 +884,8 @@ struct MinisLinkPreviewView: View {
                 .ignoresSafeArea(.keyboard)
                 .navigationTitle(holder.pageTitle.isEmpty ? (url.host ?? url.absoluteString) : holder.pageTitle)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .minisToolbarBackground(.ultraThinMaterial)
+                .minisToolbarBackground(.visible)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button { dismiss() } label: {
@@ -904,13 +904,13 @@ struct MinisLinkPreviewView: View {
                     }
                 }
         }
-        .presentationDetents([.large])
+        .minisPresentationDetents([.large])
         // [T-ios-html-preview-wide-sheet] Widen to a page-style sheet on
         // iPad/Mac, reusing the shared modifier from AIChatView.swift. iPhone
         // unaffected (presentationSizing is iOS18+ and .page only affects
         // iPad/Mac form sheets).
         .modifier(WideSheetSizingModifier())
-        .presentationDragIndicator(.hidden)
+        .minisPresentationDragIndicator(.hidden)
         // [T-webview-preview-swipe-dismiss] Interactive-dismiss arbitration is
         // now done at the gesture layer by WebViewDismissArbiterGate (above),
         // which vetoes the sheet dismiss pan synchronously when the touch is on

@@ -53,7 +53,7 @@ private final class CachedViewModel: ObservableObject {
         cancellable = vm.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
 
-        // iOS 16 fix: When NavigationStack recreates the @StateObject, the new
+        // iOS 16 fix: When MinisNavStack recreates the @StateObject, the new
         // CachedViewModel may wrap a VM that already has messages loaded. Force
         // a re-render so SwiftUI picks up the current state, since objectWillChange
         // events between the old and new subscription may have been lost.
@@ -821,7 +821,7 @@ struct AIChatView: View {
         }
         .sheet(item: $locateDownloadTarget) { target in
             if let sid = vm.sessionId {
-                NavigationStack {
+                MinisNavStack {
                     FileBrowserView(
                         rootPath: AIChatViewModel.minisWorkspacePersistentDir(for: sid),
                         rootLabel: "/var/minis/workspace",
@@ -962,8 +962,8 @@ struct AIChatView: View {
         }
         .sheet(item: $previewAudioFile) { fileURL in
             MinisAudioPreviewView(fileURL: fileURL)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
+                .minisPresentationDetents([.large])
+                .minisPresentationDragIndicator(.hidden)
         }
         .sheet(item: $previewTextFile) { fileURL in
             MinisTextPreviewView(fileURL: fileURL)
@@ -1047,7 +1047,7 @@ struct AIChatView: View {
             })
         }
         .sheet(isPresented: $showFileBrowser) {
-            NavigationStack {
+            MinisNavStack {
                 let base = RootfsManager.shared.dataPath
                 FileBrowserView(rootPath: base, initialPath: base.appendingPathComponent("var/minis"), rootLabel: "/")
             }
@@ -1058,16 +1058,16 @@ struct AIChatView: View {
             })
         }
         .sheet(isPresented: $showModelPicker) {
-            NavigationStack {
+            MinisNavStack {
                 SessionModelPicker(sessionId: vm.sessionId) {
                     await vm.ensureSessionReturningId()
                 }
             }
-            .presentationDetents([.large])
+            .minisPresentationDetents([.large])
         }
         .sheet(isPresented: $showTokenUsage) {
             TokenUsageSheet(vm: cached.vm)
-                .presentationDetents([.fraction(0.8), .large])
+                .minisPresentationDetents([.fraction(0.8), .large])
         }
         .sheet(item: $screenshotPreview) { preview in
             ChatScreenshotPreviewSheet(image: preview.image)
@@ -1154,7 +1154,7 @@ struct AIChatView: View {
         .fullScreenCover(isPresented: $showTerminal) {
             terminalInitCommand = nil
         } content: {
-            NavigationStack {
+            MinisNavStack {
                 ISHTerminalView(sessionId: vm.sessionId, showCloseButton: true, initCommand: terminalInitCommand)
                     .onAppear {
                         if let sid = vm.sessionId {
@@ -1327,7 +1327,7 @@ struct AIChatView: View {
             if let sessionId {
                 if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
                     // Load session if: (a) VM is freshly created, or (b) cache hit but messages
-                    // are empty — this can happen on iOS 16 where NavigationStack may recreate
+                    // are empty — this can happen on iOS 16 where MinisNavStack may recreate
                     // @StateObject unexpectedly, causing isNew=false but an empty VM.
                     minisLogger.info("🔄SESSION AIChatView.onAppear loading session \(sessionId) isNew=\(cached.isNew) msgs=\(vm.messages.count)")
                     // [T-ios-session-coldload-listsessions-block] .userInitiated
@@ -2562,7 +2562,7 @@ struct AIChatView: View {
                     showThinkingLevelSheet = false
                 }
             )
-            .presentationDetents([.medium])
+            .minisPresentationDetents([.medium])
         }
     }
 
@@ -4424,7 +4424,7 @@ struct AIChatView: View {
                 // reserves the top/bottom share.
                 .padding(Self.popupRowInset)
             }
-            .scrollIndicators(.visible)
+            .minisScrollIndicators(.visible)
             .frame(height: Self.slashPickerFixedHeight)
         }
     }
@@ -4495,7 +4495,7 @@ struct AIChatView: View {
                         // [T-slash-picker-fixed-height] Match slash popup:
                         // exactly 4 rows tall, scrolls on overflow with the
                         // visible indicator above.
-                        .scrollIndicators(.visible)
+                        .minisScrollIndicators(.visible)
                         .frame(height: Self.slashPickerFixedHeight)
                         .onChange(of: vm.mentionSelectedIndex) { newIndex in
                             guard newIndex >= 0, newIndex < rows.count else { return }
@@ -5232,8 +5232,8 @@ private struct ProviderImportSheet: View {
             }
         }
         .padding(24)
-        .presentationDetents([.height(360), .medium])
-        .presentationDragIndicator(.visible)
+        .minisPresentationDetents([.height(360), .medium])
+        .minisPresentationDragIndicator(.visible)
         // Swipe-to-dismiss without tapping a button still needs cleanup.
         .onDisappear { if !chose { onCancel() } }
     }
@@ -5295,7 +5295,7 @@ struct NavBarStyleModifier: ViewModifier {
     /// the safe-area measuring overlay entirely.
     ///
     /// That overlay writes `topSafeAreaInset` from an `onGeometryChange`
-    /// action. A tool sheet presented from OUTSIDE the page's NavigationStack
+    /// action. A tool sheet presented from OUTSIDE the page's MinisNavStack
     /// (SheetOverlayView, a child VC of the message list) changes the top inset
     /// as it presents and dismisses, so the action fires DURING the dismissal's
     /// view-graph update. On the agent transcript page that update ends with
@@ -5333,8 +5333,8 @@ struct NavBarStyleModifier: ViewModifier {
         } else {
             // iOS 16–18: opaque navbar background
             content
-                .toolbarBackground(ChatColors.background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .minisToolbarBackground(ChatColors.background)
+                .minisToolbarBackground(.visible)
                 .overlay(alignment: .top) {
                     if measuresSafeArea {
                         // [T-ios-geometry-observer-crash] onGeometryChange
@@ -5471,7 +5471,7 @@ private struct ChatToolbarKey: Equatable {
 
 /// [T-ios-navbar-toolbar-host] Zero-footprint host that owns the navigation
 /// toolbar. Attached via .background on the chat content, so it sits inside
-/// the NavigationStack destination (toolbar registers from any descendant),
+/// the MinisNavStack destination (toolbar registers from any descendant),
 /// occupies no layout, and — being Equatable on the toolbar's displayed
 /// inputs — its body (the ToolbarContent builder) only re-runs when something
 /// the toolbar actually shows changes. Streaming ticks leave the key equal,
@@ -5536,7 +5536,7 @@ private struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
             .allowsHitTesting(false)
             .toolbar {
                 ToolbarItem(placement: .principal) { title() }
-                ToolbarItem(placement: .topBarTrailing) { trailing() }
+                ToolbarItem(placement: .minisTopBarTrailing) { trailing() }
             }
     }
 }
@@ -6032,7 +6032,7 @@ private struct MoveToSessionSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 if !isSearching {
                     Button {
@@ -6142,7 +6142,7 @@ private struct MoveToSessionSheet: View {
                     .font(font).foregroundColor(color)
             }
             result = result + Text(text[range])
-                .font(font).foregroundColor(.accentColor).bold()
+                .font(font).foregroundColor(.accentColor).minisBold()
             current = range.upperBound
         }
         if current < text.endIndex {
@@ -6448,7 +6448,7 @@ private struct SpeechLanguagePickerSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 let preferred = filteredLocales.filter { preferredCodes.contains($0.language.languageCode?.identifier ?? "") }
                 let others = filteredLocales.filter { !preferredCodes.contains($0.language.languageCode?.identifier ?? "") }
@@ -6480,7 +6480,7 @@ private struct SpeechLanguagePickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .minisPresentationDetents([.medium, .large])
     }
 
     private func languageRow(_ loc: Locale) -> some View {
@@ -6520,7 +6520,7 @@ struct CompactSummarySheet: View {
     @State private var showRevertConfirm = false
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             VStack(spacing: 0) {
                 SelectableTextView(text: summary)
                     .padding(.horizontal, 16)
@@ -6545,13 +6545,13 @@ struct CompactSummarySheet: View {
             .navigationTitle("Compact Summary")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
                 }
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     Button {
                         UIPasteboard.general.string = summary
                         copied = true
@@ -6573,7 +6573,7 @@ struct CompactSummarySheet: View {
                 Text("The summary will be discarded and the messages it covered will become active again. This may push the conversation past the model's context window — if that happens, long-press a message to re-compact from that point.")
             }
         }
-        .presentationDetents([.large])
+        .minisPresentationDetents([.large])
     }
 }
 
@@ -6616,7 +6616,7 @@ private struct TokenUsageSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 let s = vm.sessionTokenStats
 
@@ -6672,7 +6672,7 @@ private struct TokenUsageSheet: View {
             .navigationTitle("Session Token Usage")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }

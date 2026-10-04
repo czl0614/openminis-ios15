@@ -107,7 +107,7 @@ struct ProviderInstanceDetailView: View {
             }
         }
         .sheet(isPresented: $showManualTokenInput) {
-            NavigationStack {
+            MinisNavStack {
                 Form {
                     Section {
                         SecureField("Bearer token", text: $manualTokenInputText)
@@ -152,7 +152,7 @@ struct ProviderInstanceDetailView: View {
                     }
                 }
             }
-            .presentationDetents([.medium])
+            .minisPresentationDetents([.medium])
         }
         .alert("Delete Provider", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
@@ -436,11 +436,11 @@ struct ProviderInstanceDetailView: View {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(label).json")
                 let _ = try? json.write(to: tempURL, atomically: true, encoding: .utf8)
                 ProviderShareSheet(url: tempURL)
-                    .presentationDetents([.medium])
+                    .minisPresentationDetents([.medium])
             } else {
                 Text("Failed to export provider configuration.")
                     .foregroundStyle(.secondary)
-                    .presentationDetents([.medium])
+                    .minisPresentationDetents([.medium])
             }
         }
     }
@@ -1236,7 +1236,7 @@ struct AddCustomModelSheet: View {
     private var instance: ProviderInstance? { store.instance(for: instanceId) }
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 Section {
                     TextField("Model ID (e.g. claude-3-opus-latest)", text: $modelId)
@@ -1298,10 +1298,10 @@ struct AddCustomModelSheet: View {
             .navigationTitle("Add Custom Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Add") { addModel() }
                         .font(.body.weight(.semibold))
                         .disabled(modelId.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1423,7 +1423,7 @@ struct ModelEntryDetailSheet: View {
     @State private var showResetAlert: Bool = false
 
     var body: some View {
-        NavigationStack {
+        MinisNavStack {
             List {
                 Section("Identity") {
                     HStack {
@@ -1598,12 +1598,12 @@ struct ModelEntryDetailSheet: View {
             }
             .navigationTitle("Model Details")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollDismissesKeyboard(.interactively)
+            .minisScrollDismissesKeyboard(.interactively)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .minisTopBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .minisTopBarTrailing) {
                     Button("Save") { save() }
                         .font(.body.weight(.semibold))
                 }
@@ -1616,8 +1616,8 @@ struct ModelEntryDetailSheet: View {
                 // pin a stale TestSession.
                 ModelQuickTestSheet(entry: entry)
                     .id(entry.id)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                    .minisPresentationDetents([.medium, .large])
+                    .minisPresentationDragIndicator(.visible)
             }
             .alert(
                 AppLocalized("Force Enable Thinking"),
