@@ -15,16 +15,19 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: '构建机镜像（若 iOS 26 SDK 为必需，改用 macos-26）'
+        description: '构建机镜像'
         required: false
-        default: 'macos-15'
+        default: 'macos-26'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: ${{ github.event.inputs.runner || 'macos-15' }}
+    # macos-26 提供 Xcode 26（含 iOS 26 SDK + Metal Toolchain 组件），
+    # 与上游 BUILDING.md 声明的构建配置一致。
+    # 备选：macos-15（Xcode 16.4 / iOS 18.4 SDK）。
+    runs-on: ${{ github.event.inputs.runner || 'macos-26' }}
     timeout-minutes: 350
 
     steps:
@@ -51,11 +54,29 @@ jobs:
 
       - name: 安装构建依赖
         run: |
-          brew install ninja llvm libarchive pkg-config
+          # lld 是必需的：iSH 的 VDSO 用 `clang -target aarch64-linux-gnu -fuse-ld=lld`
+          # 链接，而 Homebrew 的 llvm 公式已把 lld 拆成独立 formula，
+          # 不装就会报 "invalid linker name in argument '-fuse-ld=lld'"。
+          brew install ninja llvm libarchive pkg-config lld
           python3 -m pip install --break-system-packages meson || python3 -m pip install meson
 
-      - name: 下载 Metal Toolchain（FFmpeg 的 yadif_videotoolbox 滤镜用，缺失不致命）
-        run: xcodebuild -downloadComponent MetalToolchain || echo "Metal Toolchain 下载失败，继续（FFmpeg 会静默丢弃该滤镜）"
+      - name: 把 LLVM 的 lld 加入 PATH
+        run: |
+          # 让 clang 能解析 -fuse-ld=lld
+          if [ -d /opt/homebrew/opt/lld/bin ]; then
+            echo "/opt/homebrew/opt/lld/bin" >> "$GITHUB_PATH"
+          fi
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          ls -l /opt/homebrew/opt/lld/bin 2>/dev/null || ls -l /opt/homebrew/bin/ld.lld 2>/dev/null || echo "警告：未找到 ld.lld"
+
+      - name: 下载 Metal Toolchain（Xcode 26 起为独立组件）
+        run: |
+          if xcodebuild -help 2>&1 | grep -q -- '-downloadComponent'; then
+            xcodebuild -downloadComponent MetalToolchain
+          else
+            echo "当前 Xcode 不支持 -downloadComponent（Metal Toolchain 已内置），跳过"
+          fi
+          xcrun -sdk iphoneos metal --version || echo "metal 工具不可用，FFmpeg 会静默丢弃 yadif_videotoolbox 滤镜（不影响其他功能）"
 
       - name: 生成构建期配置文件
         run: |
@@ -151,5 +172,6 @@ jobs:
         with:
           name: build-logs
           path: |
-            xcodebuild.log
+            *.log
+            **/*.log
           if-no-files-found: ignore
