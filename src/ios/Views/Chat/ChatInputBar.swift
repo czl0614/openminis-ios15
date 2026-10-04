@@ -71,6 +71,10 @@ struct SwipeToSendHint: View {
 // MARK: - Flow Layout
 
 /// A custom Layout that arranges subviews in a wrapping horizontal flow.
+///
+/// [iOS 15 移植] `Layout` 协议与 `ProposedViewSize` 都是 iOS 16+，
+/// 因此本类型整体标注为 iOS 16 起可用；iOS 15 走 `AttachmentFlowLayout` 回退。
+@available(iOS 16.0, *)
 private struct FlowLayout: Layout {
     var hSpacing: CGFloat = 8
     var vSpacing: CGFloat = 8
@@ -156,6 +160,35 @@ private struct FlowLayout: Layout {
 
 // MARK: - Input Attachment Grid
 
+/// iOS 15 回退容器：该版本没有 `Layout` 协议，用自适应网格近似「横向流式换行」。
+///
+/// 语义差异：`FlowLayout` 按内容实际宽度逐个塞满一行；`LazyVGrid(.adaptive)`
+/// 按等宽列排布。对附件缩略图这类尺寸接近的方块，观感基本一致。
+private struct AttachmentFlowLayout<Content: View>: View {
+    var hSpacing: CGFloat = 8
+    var vSpacing: CGFloat = 8
+    var alignment: HorizontalAlignment = .leading
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            // 这里必须调用系统的自定义 Layout 本体，不能写成 AttachmentFlowLayout，
+            // 否则会变成自我递归。
+            FlowLayout(hSpacing: hSpacing, vSpacing: vSpacing, alignment: alignment) {
+                content
+            }
+        } else {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 96), spacing: hSpacing)],
+                alignment: alignment,
+                spacing: vSpacing
+            ) {
+                content
+            }
+        }
+    }
+}
+
 struct AttachmentGridHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
@@ -175,7 +208,7 @@ struct InputAttachmentGridView: View {
     @State private var draggingID: UUID?
 
     var body: some View {
-        FlowLayout(hSpacing: 8, vSpacing: 8) {
+        AttachmentFlowLayout(hSpacing: 8, vSpacing: 8) {
             ForEach(attachments) { attachment in
                 AttachmentChip(attachment: attachment) {
                     onRemove(attachment)
@@ -604,6 +637,7 @@ private struct AttachmentPreviewView: UIViewControllerRepresentable {
 
 // MARK: - Video File Transferable (for PhotosPicker video export)
 
+@available(iOS 16.0, *)
 struct VideoFileTransferable: Transferable {
     let url: URL
 
@@ -734,7 +768,7 @@ struct UserAttachmentList: View {
     }
 
     var body: some View {
-        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
+        AttachmentFlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
             ForEach(attachments) { meta in
                 if meta.isImage {
                     AsyncImageTile(meta: meta, tileSize: tileSize) {
@@ -914,7 +948,7 @@ struct QueuedAttachmentPreview: View {
     private let tileSize: CGFloat = UserAttachmentTileMetrics.tile
 
     var body: some View {
-        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
+        AttachmentFlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
             ForEach(attachments) { attachment in
                 switch attachment.kind {
                 case .image:

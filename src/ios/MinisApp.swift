@@ -576,7 +576,7 @@ struct MinisApp: App {
                 debugServer.restartIfDead(port: 8321)
                 #endif
 
-                try? await UNUserNotificationCenter.current().setBadgeCount(0)
+                await MinisBadge.setAsync(0)
                 BackgroundInterruptionTracker.shared.checkOnForeground()
                 // [T-shortcuts-diag-and-pending] Scan for AppIntent runs that
                 // were marked pending but never cleared (i.e. the process was
@@ -733,9 +733,13 @@ struct MinisApp: App {
 
     // MARK: - FileProvider
 
+    /// [iOS 15 移植] 原用 `NSFileProviderDomain(identifier:displayName:)`（iOS 16+），
+    /// 改用 iOS 11 起就存在的三参数形式；本移植未内嵌 FileProvider 扩展，
+    /// `pathRelativeToDocumentStorage` 传空串即可。
     private static let fileProviderDomain = NSFileProviderDomain(
         identifier: NSFileProviderDomainIdentifier("com.openminis.app.files"),
-        displayName: "Minis"
+        displayName: "Minis",
+        pathRelativeToDocumentStorage: ""
     )
 
     /// Bumped when we need to force-rebuild the FileProvider domain on next launch
@@ -904,7 +908,7 @@ struct MinisApp: App {
                 }
                 lifecycleLog.info("[FileProvider] force-reset snapshot OK files=\(snapshotResult.files) bytes=\(snapshotResult.bytes)")
 
-                NSFileProviderManager.remove(fileProviderDomain, mode: .removeAll) { preservedLocation, removeErr in
+                MinisFileProviderCompat.removeAll(domain: fileProviderDomain) { preservedLocation, removeErr in
                     if let removeErr {
                         lifecycleLog.warning("[FileProvider] force-reset remove(.removeAll) failed: \(removeErr.localizedDescription) — leaving snapshot for next try")
                         // Don't bump generation; snapshot stays for next launch.

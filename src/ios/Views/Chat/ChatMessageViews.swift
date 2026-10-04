@@ -159,7 +159,7 @@ private struct ContextMenuPreviewSurface: ViewModifier {
 private struct UserBubbleSurface: ViewModifier {
     let isQueued: Bool
 
-    /// Matches `.contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18))`
+    /// Matches `.minisContextMenuPreviewShape(RoundedRectangle(cornerRadius: 18))`
     /// on the row exactly — including the default (non-`.continuous`) corner
     /// style. A `.continuous` bubble against a circular-arc preview clip would
     /// show the corners subtly change shape as the long-press lift begins.
@@ -445,7 +445,7 @@ struct ChatMessageRow: View {
             // otherwise the lifted preview shows square corners while the bubble
             // is RoundedRectangle(cornerRadius: 18). iOS 16+ lets us specify the
             // preview clip shape independently from the interaction shape.
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18))
+            .minisContextMenuPreviewShape(RoundedRectangle(cornerRadius: 18))
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = message.content
@@ -619,7 +619,7 @@ struct ChatMessageRow: View {
         // (ViewGraphGeometryObservers.needsUpdate SIGTRAP). onGeometryChange
         // measures the same row bounds the background GeometryReader did,
         // and its initial fire covers the old onAppear seed.
-        .onGeometryChange(for: CGRect.self) { proxy in
+        .minisOnGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { rowFrameInWindow = $0 }
         .background {

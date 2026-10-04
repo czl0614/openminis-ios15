@@ -60,8 +60,8 @@ struct MemoryManagementView: View {
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if #available(iOS 17.0, *), iCloudSyncEnabled {
-                ToolbarItem(placement: .minisTopBarTrailing) {
+            ToolbarItemGroup(placement: .minisTopBarTrailing) {
+                if #available(iOS 17.0, *), iCloudSyncEnabled {
                     Menu {
                         Button {
                             Task { await forceSyncMemory() }

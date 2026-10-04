@@ -19,6 +19,9 @@
 //
 
 import SwiftUI
+import UIKit
+import UserNotifications
+import FileProvider
 
 // MARK: - 版本常量
 
@@ -639,6 +642,79 @@ struct MinisGeometryValueKey<T: Equatable>: PreferenceKey {
 
     static func reduce(value: inout T?, nextValue: () -> T?) {
         if let next = nextValue() { value = next }
+    }
+}
+
+// MARK: - 14. 应用角标（iOS 16 的 UNUserNotificationCenter.setBadgeCount）
+
+/// `UNUserNotificationCenter.setBadgeCount(_:)`（iOS 16+）的兼容封装。
+///
+/// iOS 15 回退到 `UIApplication.applicationIconBadgeNumber` —— 该属性在
+/// iOS 17 起被废弃，但在 iOS 15 上正是官方做法。
+enum MinisBadge {
+    /// 回调形式（对应 `setBadgeCount(_:withCompletionHandler:)`）。
+    static func set(_ count: Int, completion: @escaping (Error?) -> Void) {
+        if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(count, withCompletionHandler: completion)
+        } else {
+            DispatchQueue.main.async {
+                UIApplication.shared.applicationIconBadgeNumber = count
+                completion(nil)
+            }
+        }
+    }
+
+    /// async 形式（对应 `try await setBadgeCount(_:)`）。
+    static func setAsync(_ count: Int) async {
+        if #available(iOS 16.0, *) {
+            try? await UNUserNotificationCenter.current().setBadgeCount(count)
+        } else {
+            await MainActor.run {
+                UIApplication.shared.applicationIconBadgeNumber = count
+            }
+        }
+    }
+}
+
+// MARK: - 15. 上下文菜单预览裁剪形状（iOS 16/17）
+
+extension View {
+    /// `.contentShape(.contextMenuPreview, shape)` 的兼容版本。
+    ///
+    /// 该 API 用于给「长按预览」单独指定裁剪形状；iOS 15 无此能力，
+    /// 退化为 no-op —— 仅表现为预览沿用默认矩形裁剪，功能不受影响。
+    @ViewBuilder
+    func minisContextMenuPreviewShape<S: Shape>(_ shape: S) -> some View {
+        if #available(iOS 16.0, *) {
+            self.contentShape(.contextMenuPreview, shape)
+        } else {
+            self
+        }
+    }
+}
+
+
+// MARK: - 16. FileProvider 域管理（iOS 16 的 remove(_:mode:)）
+
+/// `NSFileProviderManager.remove(_:mode:completionHandler:)`（iOS 16+）的兼容封装。
+///
+/// iOS 15 回退到 iOS 11 的 `remove(_:completionHandler:)`：后者没有
+/// `preservedLocation` 概念，因此统一回传 `nil`。调用点本就把
+/// `preservedLocation` 当作可选值打印，语义兼容。
+enum MinisFileProviderCompat {
+    static func removeAll(
+        domain: NSFileProviderDomain,
+        completion: @escaping (URL?, Error?) -> Void
+    ) {
+        if #available(iOS 16.0, *) {
+            NSFileProviderManager.remove(domain, mode: .removeAll) { url, err in
+                completion(url, err)
+            }
+        } else {
+            NSFileProviderManager.remove(domain) { err in
+                completion(nil, err)
+            }
+        }
     }
 }
 

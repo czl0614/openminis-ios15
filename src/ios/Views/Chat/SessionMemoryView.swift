@@ -274,8 +274,8 @@ private struct MemoryContentView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if fileURL != nil {
-                ToolbarItem(placement: .minisTopBarTrailing) {
+            ToolbarItemGroup(placement: .minisTopBarTrailing) {
+                if fileURL != nil {
                     if isEditing {
                         Button("Save") {
                             save()

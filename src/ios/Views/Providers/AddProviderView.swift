@@ -344,6 +344,7 @@ struct AddProviderView: View {
         .sheet(isPresented: $showKimiLogin) {
             // [T-kimi-oauth] RFC 8628 device-code login. On success, mark the
             // OAuth step done + surface the masked token, matching startOAuth().
+            if #available(iOS 16.0, *) {
             KimiDeviceLoginSheet(instanceId: pendingInstanceId) { success in
                 if success {
                     oauthAuthTime = Date()
@@ -351,16 +352,29 @@ struct AddProviderView: View {
                     pendingOAuthDone = true
                 }
             }
+            } else {
+                Text(AppLocalized("This feature requires iOS 16 or later."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding()
+            }
         }
         .sheet(isPresented: $showCopilotLogin) {
             // [T-copilot-provider] Device-code login, gated behind the risk
             // notice inside the sheet.
+            if #available(iOS 16.0, *) {
             CopilotDeviceLoginSheet(instanceId: pendingInstanceId) { success in
                 if success {
                     oauthAuthTime = Date()
                     oauthMaskedToken = loadMaskedToken(type: .githubCopilot)
                     pendingOAuthDone = true
                 }
+            }
+            } else {
+                Text(AppLocalized("This feature requires iOS 16 or later."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding()
             }
         }
         .fileImporter(isPresented: $showImportFile, allowedContentTypes: [.json]) { result in

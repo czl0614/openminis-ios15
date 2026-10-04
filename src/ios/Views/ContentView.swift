@@ -394,7 +394,7 @@ private struct FolderSurface: ViewModifier {
             : UIColor(red: 252/255.0, green: 252/255.0, blue: 252/255.0, alpha: 1)
     })
 
-    private var shape: AnyShape {
+    private var shape: MinisAnyShape {
         switch kind {
         case .lone:
             return MinisAnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -474,7 +474,7 @@ private struct FolderCardBackground: ViewModifier {
     let isDropTarget: Bool
     let isExpanded: Bool
 
-    private var dropShape: AnyShape {
+    private var dropShape: MinisAnyShape {
         isExpanded
             ? MinisAnyShape(MinisUnevenRoundedRectangle(
                 topLeadingRadius: 16, bottomLeadingRadius: 0,
