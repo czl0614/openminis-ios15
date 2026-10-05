@@ -399,7 +399,7 @@ struct AIChatView: View {
     @State private var pendingProviderImport: PendingProviderImport?
     @State private var providerImportResult: String?
     @State private var screenshotPreview: ChatScreenshotPreview?
-    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var selectedPhotoItems: [MinisPhotosPickerItem] = []
     @State private var attachmentGridHeight: CGFloat = 0
     @State private var transcriptHeight: CGFloat = 0
     /// Tracks how much of recognizedText has already been appended to inputText.
@@ -1198,7 +1198,7 @@ struct AIChatView: View {
                 }
             )
         }
-        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItems,
+        .minisPhotosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItems,
                       maxSelectionCount: 50, matching: .any(of: [.images, .videos]))
         .onChange(of: selectedPhotoItems) { items in
             guard !items.isEmpty else { return }
@@ -1216,7 +1216,7 @@ struct AIChatView: View {
 
             // Snapshot per-item metadata synchronously (PHAsset fetch + UTI) so the
             // concurrent loaders don't touch SwiftUI state or PhotosUI mid-flight.
-            struct PickJob { let id: UUID; let item: PhotosPickerItem; let isVideo: Bool; let ext: String?; let date: Date? }
+            struct PickJob { let id: UUID; let item: MinisPhotosPickerItem; let isVideo: Bool; let ext: String?; let date: Date? }
             let jobs: [PickJob] = zip(placeholderIDs, items).map { pid, item in
                 let isVideo = item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) })
                 var assetDate: Date?
@@ -1236,14 +1236,14 @@ struct AIChatView: View {
                     for job in jobs {
                         group.addTask {
                             if job.isVideo {
-                                if let videoURL = try? await job.item.loadTransferable(type: VideoFileTransferable.self) {
+                                if let videoURL = await job.item.loadVideoFileURL() {
                                     await MainActor.run {
-                                        vm.finalizeVideoPlaceholder(id: job.id, from: videoURL.url, originalDate: job.date)
+                                        vm.finalizeVideoPlaceholder(id: job.id, from: videoURL, originalDate: job.date)
                                     }
                                 } else {
                                     await MainActor.run { vm.markPlaceholderFailed(id: job.id) }
                                 }
-                            } else if let data = try? await job.item.loadTransferable(type: Data.self) {
+                            } else if let data = await job.item.loadData() {
                                 // Preserve original encoded bytes (PNG transparency,
                                 // HEIC, animated GIFs, EXIF) — written verbatim.
                                 await MainActor.run {

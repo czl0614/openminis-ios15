@@ -22,6 +22,8 @@ import SwiftUI
 import UIKit
 import UserNotifications
 import FileProvider
+import PhotosUI
+import UniformTypeIdentifiers
 
 // MARK: - 版本常量
 
@@ -730,9 +732,12 @@ enum MinisFileProviderCompat {
 extension View {
     /// `navigationSplitViewColumnWidth(min:ideal:max:)`（iOS 16+）的兼容版本。
     /// iOS 15 没有 NavigationSplitView，无列宽概念，退化为 no-op。
+    ///
+    /// 注意：系统签名里 `ideal` 是**非可选** `CGFloat`（只有 `min` / `max` 可选），
+    /// 这里必须保持一致，否则转发时会报可选值未解包。
     @ViewBuilder
     func minisNavigationSplitViewColumnWidth(min: CGFloat? = nil,
-                                             ideal: CGFloat? = nil,
+                                             ideal: CGFloat,
                                              max: CGFloat? = nil) -> some View {
         if #available(iOS 16.0, *) {
             self.navigationSplitViewColumnWidth(min: min, ideal: ideal, max: max)
@@ -922,6 +927,112 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
     private func applyConfiguration() {
         guard let cfg = configuration as? MinisLegacyHostingConfiguration<Content> else { return }
         host.rootView = cfg.content
+    }
+}
+
+// MARK: - 20. PhotosPicker（iOS 16）
+
+/// `PhotosPickerItem`（iOS 16+）的兼容包装。
+///
+/// iOS 15 上 `.minisPhotosPicker` 是 no-op，因此本包装在旧系统上不会被真正填充：
+/// `supportedContentTypes` 恒为空、`itemIdentifier` 恒为 nil、两个 `load…`
+/// 方法恒返回 nil。调用方原本就有「加载失败 → 标记占位符失败」的分支，语义自洽。
+///
+/// 标注 `@available(iOSApplicationExtension, unavailable)`：本文件同时编入
+/// ShareExtension / AgentWidget，而 PhotosPicker 只在主 App 使用。
+@available(iOSApplicationExtension, unavailable)
+struct MinisPhotosPickerItem: Hashable {
+    private let storage: Any?
+
+    init() { storage = nil }
+
+    @available(iOS 16.0, *)
+    init(_ item: PhotosPickerItem) { storage = item }
+
+    @available(iOS 16.0, *)
+    var sdkItem: PhotosPickerItem? { storage as? PhotosPickerItem }
+
+    /// 对应 `PhotosPickerItem.supportedContentTypes`。
+    var supportedContentTypes: [UTType] {
+        if #available(iOS 16.0, *) { return sdkItem?.supportedContentTypes ?? [] }
+        return []
+    }
+
+    /// 对应 `PhotosPickerItem.itemIdentifier`。
+    var itemIdentifier: String? {
+        if #available(iOS 16.0, *) { return sdkItem?.itemIdentifier }
+        return nil
+    }
+
+    /// 对应 `loadTransferable(type: Data.self)`。
+    func loadData() async -> Data? {
+        if #available(iOS 16.0, *) {
+            guard let item = sdkItem else { return nil }
+            return try? await item.loadTransferable(type: Data.self)
+        }
+        return nil
+    }
+
+    /// 对应 `loadTransferable(type: VideoFileTransferable.self)`，直接返回文件 URL。
+    func loadVideoFileURL() async -> URL? {
+        if #available(iOS 16.0, *) {
+            guard let item = sdkItem else { return nil }
+            guard let file = try? await item.loadTransferable(type: VideoFileTransferable.self) else {
+                return nil
+            }
+            return file?.url
+        }
+        return nil
+    }
+}
+
+@available(iOSApplicationExtension, unavailable)
+extension View {
+    /// `.photosPicker(isPresented:selection:maxSelectionCount:matching:)`（iOS 16+）
+    /// 的兼容版本，多选形态。
+    @ViewBuilder
+    func minisPhotosPicker(
+        isPresented: Binding<Bool>,
+        selection: Binding<[MinisPhotosPickerItem]>,
+        maxSelectionCount: Int? = nil,
+        matching: PHPickerFilter
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.photosPicker(
+                isPresented: isPresented,
+                selection: Binding<[PhotosPickerItem]>(
+                    get: { selection.wrappedValue.compactMap { $0.sdkItem } },
+                    set: { selection.wrappedValue = $0.map { MinisPhotosPickerItem($0) } }
+                ),
+                maxSelectionCount: maxSelectionCount,
+                matching: matching
+            )
+        } else {
+            self
+        }
+    }
+
+    /// 单选形态。
+    @ViewBuilder
+    func minisPhotosPicker(
+        isPresented: Binding<Bool>,
+        selection: Binding<MinisPhotosPickerItem?>,
+        matching: PHPickerFilter
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.photosPicker(
+                isPresented: isPresented,
+                selection: Binding<PhotosPickerItem?>(
+                    get: { selection.wrappedValue?.sdkItem },
+                    set: { newValue in
+                        selection.wrappedValue = newValue.map { MinisPhotosPickerItem($0) }
+                    }
+                ),
+                matching: matching
+            )
+        } else {
+            self
+        }
     }
 }
 

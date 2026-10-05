@@ -16,7 +16,7 @@ struct SoulSettingsView: View {
     @State private var showEmojiPrompt = false
     @State private var emojiDraft = ""
     @State private var showPhotoPicker = false
-    @State private var photoItem: PhotosPickerItem? = nil
+    @State private var photoItem: MinisPhotosPickerItem? = nil
     @State private var iconError: String? = nil
     @State private var style: String = SoulMetadata.default.style
     @State private var lang: String = SoulMetadata.default.lang
@@ -523,7 +523,7 @@ private struct SoulIconEditing: ViewModifier {
     @Binding var showEmojiPrompt: Bool
     @Binding var emojiDraft: String
     @Binding var showPhotoPicker: Bool
-    @Binding var photoItem: PhotosPickerItem?
+    @Binding var photoItem: MinisPhotosPickerItem?
     @Binding var iconError: String?
 
     func body(content: Content) -> some View {
@@ -535,8 +535,8 @@ private struct SoulIconEditing: ViewModifier {
                     icon = chosen
                 }
             }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem,
-                          matching: .images, photoLibrary: .shared())
+            .minisPhotosPicker(isPresented: $showPhotoPicker, selection: $photoItem,
+                          matching: .images)
             // Single-parameter form: the two-parameter `onChange` is iOS 17+,
             // and this target still deploys lower.
             .onChange(of: photoItem) { newItem in
@@ -569,9 +569,9 @@ private struct SoulIconEditing: ViewModifier {
     }
 
     /// Load, validate and normalize a picked photo into the stored form.
-    private func applyPickedImage(_ item: PhotosPickerItem) async {
+    private func applyPickedImage(_ item: MinisPhotosPickerItem) async {
         defer { photoItem = nil }
-        guard let data = try? await item.loadTransferable(type: Data.self),
+        guard let data = await item.loadData(),
               let image = UIImage(data: data) else {
             await MainActor.run { iconError = AppLocalized("That image couldn't be read.") }
             return
