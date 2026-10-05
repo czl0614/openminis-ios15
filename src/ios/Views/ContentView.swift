@@ -2502,7 +2502,7 @@ struct ContentView: View {
             // splitList（点击行写入 selectedSessionId）与 detailView。
             // 上游 iPhone 紧凑布局的路径深度实际恒为 1，所以两者等价。
             MinisLegacyCompactStack(selection: $selectedSessionId) {
-                sessionList(useNavigationLinks: false)
+                sessionList(useNavigationLinks: false, tapToSelect: true)
             } detail: { _ in
                 detailView
             }
@@ -3171,12 +3171,12 @@ struct ContentView: View {
     // MARK: - Session List
 
     @ViewBuilder
-    private func sessionList(useNavigationLinks: Bool) -> some View {
+    private func sessionList(useNavigationLinks: Bool, tapToSelect: Bool = false) -> some View {
         Group {
             if useNavigationLinks {
                 stackList
             } else {
-                splitList
+                splitList(tapToSelect: tapToSelect)
             }
         }
         // Hardware ⌘F → focus search, available while the session list is on
@@ -3427,7 +3427,13 @@ struct ContentView: View {
 
     /// Selection-bound List for split (iPad) layout.
     /// ScrollViewReader: same mini-bar jump wiring as stackList.
-    private var splitList: some View {
+    /// 会话列表（`List(selection:)` 形式）。
+    ///
+    /// - Parameter tapToSelect: iOS 15 回退路径必须传 `true`。
+    ///   紧凑宽度（iPhone）下的 `List(selection:)` **不会在点击时写入选中值** ——
+    ///   它只在 iPad 的 NavigationSplitView 侧栏里由系统驱动选中。
+    ///   因此旧系统上必须补一个显式点击处理，否则点会话行没有任何反应。
+    private func splitList(tapToSelect: Bool = false) -> some View {
         ScrollViewReader { scrollProxy in
         List(selection: $selectedSessionId) {
             // [T-ios-session-list-equatable-jank] Diff a (label, ids) projection
@@ -3479,6 +3485,12 @@ struct ContentView: View {
                                 // transaction flush from unrelated ContentView
                                 // state churn doesn't deep-compare ChatSession.
                                 .equatable()
+                                // [iOS 15 回退] 紧凑宽度下 List(selection:) 不响应点击，
+                                // 这里显式写入选中值以驱动 MinisLegacyCompactStack。
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if tapToSelect { selectedSessionId = session.id }
+                                }
                                 // Entry D: long-press then move = drag the
                                 // session id (never the ChatSession value —
                                 // same id-only discipline as the list

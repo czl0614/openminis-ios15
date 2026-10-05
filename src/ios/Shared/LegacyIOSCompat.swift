@@ -120,53 +120,60 @@ extension View {
 ///
 /// 复用上游已经存在的 iPad 双列实现（列表 + detailView），因此不引入
 /// 新的视图状态机。
+/// iOS 15 的单层导航栈回退实现。
+///
+/// 上游 iPhone 紧凑布局的路径深度恒为 1（会话列表 → 会话详情），
+/// 而 iOS 15 没有值路由（NavigationStack(path:) / navigationDestination /
+/// NavigationLink(value:)），因此这里用「NavigationView + 程序化
+/// NavigationLink(isActive:)」做等价的单层推入。
+///
+/// **关键：必须包在 NavigationView 内。**
+/// 详情视图的 `.toolbar`（设置菜单、终端图标等）依赖 NavigationView 祖先才能渲染；
+/// 早期实现用裸 `VStack` 切换内容，导致详情页工具栏整体消失 —— 表现为
+/// 「设置没了、终端图标没了」，且系统导航栏也不存在。
+///
+/// 点击驱动：`selection` 由调用方写入（见 ContentView 的 `tapToSelect`）。
 struct MinisLegacyCompactStack<Root: View, Detail: View>: View {
     @Binding private var selection: String?
     private let root: () -> Root
     private let detail: (String) -> Detail
-    private let backTitle: String
 
     init(
         selection: Binding<String?>,
-        backTitle: String = "返回",
         @ViewBuilder root: @escaping () -> Root,
         @ViewBuilder detail: @escaping (String) -> Detail
     ) {
         self._selection = selection
-        self.backTitle = backTitle
         self.root = root
         self.detail = detail
     }
 
-    var body: some View {
-        if let id = selection {
-            VStack(spacing: 0) {
-                // iOS 15 回退路径没有系统导航栏返回按钮，这里补一条极简顶栏。
-                // 只在 iOS 15 上渲染，不影响 iOS 16+。
-                HStack(spacing: 6) {
-                    Button {
-                        selection = nil
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 17, weight: .semibold))
-                            Text(backTitle)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(.systemBackground))
-
-                Divider()
-
-                detail(id)
+    /// 把 `selection != nil` 映射成 NavigationLink 的激活状态；
+    /// 用户点系统返回按钮时回写 `selection = nil`。
+    private var isDetailActive: Binding<Bool> {
+        Binding(
+            get: { selection != nil },
+            set: { newValue in
+                if !newValue { selection = nil }
             }
-        } else {
+        )
+    }
+
+    var body: some View {
+        NavigationView {
             root()
+                .background(
+                    NavigationLink(isActive: isDetailActive) {
+                        if let id = selection {
+                            detail(id)
+                        }
+                    } label: {
+                        EmptyView()
+                    }
+                    .hidden()
+                )
         }
+        .navigationViewStyle(.stack)
     }
 }
 
