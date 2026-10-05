@@ -269,18 +269,35 @@ extension AIChatViewModel {
     /// FileProvider extension. Keep ONLY user-facing subdirs (shared, skills,
     /// memory) here — anything else leaks into "On My iPhone → Minis".
     nonisolated static var minisAppGroupRoot: URL {
-        FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID
-        )!.appendingPathComponent("MinisFileProvider", isDirectory: true)
+        Self.sharedContainerRoot.appendingPathComponent("MinisFileProvider", isDirectory: true)
+    }
+
+    /// App Group 容器的**安全**访问器。
+    ///
+    /// [签名/entitlements 加固] 原实现直接对 `containerURL(...)` 强制解包。
+    /// 当 App 缺少 `com.apple.security.application-groups` entitlement 时
+    /// （例如未经 provisioning 的自签安装），该 API 返回 nil，强解包会**在启动阶段崩溃**。
+    /// 这里改为不可用时回退到 App 私有 Library 目录，保证能启动。
+    ///
+    /// 回退后的代价：Share Extension 与主 App 不再共享数据、iCloud 同步不可用，
+    /// 但聊天、Linux 沙箱等核心功能不受影响。
+    nonisolated static var sharedContainerRoot: URL {
+        let fm = FileManager.default
+        if let group = fm.containerURL(forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID) {
+            return group
+        }
+        let base = fm.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let fallback = base.appendingPathComponent("MinisSharedContainer", isDirectory: true)
+        try? fm.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return fallback
     }
 
     /// App Group subdirectory for private metadata that must NOT be exposed
     /// to iOS Files (mounted-folders.json, FileProvider extension logs, etc).
     /// Sibling of `minisAppGroupRoot` inside the same App Group container.
     nonisolated static var minisConfigRoot: URL {
-        let url = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID
-        )!.appendingPathComponent("MinisConfig", isDirectory: true)
+        let url = Self.sharedContainerRoot.appendingPathComponent("MinisConfig", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

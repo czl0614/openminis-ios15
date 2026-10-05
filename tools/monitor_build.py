@@ -24,7 +24,11 @@ HEADERS = {
 }
 
 POLL_SECONDS = 90
-MAX_WAIT_SECONDS = 5 * 60 * 60  # 5 小时上限
+# [修正] 原为 5 小时，过长。构建本身约 12 分钟，留足余量即可。
+MAX_WAIT_SECONDS = 60 * 60
+# [修正] 连续失败上限。鉴权类错误（401/403）重试永远不会成功，
+# 原实现会一直重试到时间上限，导致后台任务长时间挂住。
+MAX_CONSECUTIVE_FAILURES = 5
 
 
 def api(path, raw=False):
@@ -58,6 +62,7 @@ def fetch_job_log(job_id):
 def main():
     started = time.time()
     last_line = ""
+    consecutive_failures = 0
     while True:
         if time.time() - started > MAX_WAIT_SECONDS:
             print("监控超时退出")
@@ -65,8 +70,19 @@ def main():
 
         try:
             run = api(f"/repos/{OWNER}/{REPO}/actions/runs/{RUN_ID}")
+            consecutive_failures = 0
         except urllib.error.HTTPError as e:
-            print(f"查询失败: {e}")
+            code = getattr(e, "code", 0)
+            # 4xx 是客户端/鉴权错误，重试不会成功 —— 立即退出，不要挂住后台任务。
+            if 400 <= code < 500:
+                print(f"致命错误（不可重试）: HTTP {code} {e.reason}")
+                print("提示：检查 GH_TOKEN 是否有效、是否已过期。")
+                return 2
+            consecutive_failures += 1
+            print(f"查询失败({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES}): {e}")
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                print("连续失败达到上限，退出。")
+                return 3
             time.sleep(POLL_SECONDS)
             continue
 

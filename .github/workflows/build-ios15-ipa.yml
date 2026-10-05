@@ -122,6 +122,43 @@ jobs:
             IPHONEOS_DEPLOYMENT_TARGET=15.4 \
             build 2>&1 | tee xcodebuild.log
 
+      - name: 注入 entitlements（ad-hoc 签名）
+        run: |
+          set -x
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          echo "APP=$APP"
+          # 由内到外签名：先框架，再扩展，最后主 App。
+          # 目的不是产出可安装的正式签名（TrollStore 会重新签），
+          # 而是把 entitlements 写进二进制 —— TrollStore 安装时会读取并保留它们。
+          # 缺少 com.apple.security.application-groups 会让 containerURL 返回 nil，
+          # 进而导致启动崩溃（已在代码层做兜底，但 entitlements 到位才能真正启用 App Group / iCloud）。
+          for fw in "$APP/Frameworks/"*.framework; do
+            codesign --force --sign - "$fw" 2>&1 | tail -2 || true
+          done
+          codesign --force --sign - \
+            --entitlements src/ios/ShareExtension/ShareExtension.entitlements \
+            "$APP/PlugIns/MinisShare.appex" 2>&1 | tail -2 || echo "MinisShare 签名失败（不致命）"
+          codesign --force --sign - \
+            --entitlements src/ios/AgentWidget/AgentWidget.entitlements \
+            "$APP/PlugIns/AgentWidgetExtension.appex" 2>&1 | tail -2 || echo "AgentWidget 签名失败（不致命）"
+          codesign --force --sign - \
+            --entitlements src/ios/Minis.entitlements \
+            "$APP" 2>&1 | tail -2 || echo "主 App 签名失败（不致命）"
+
+      - name: 校验 entitlements 已写入
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          echo "--- 主 App entitlements ---"
+          codesign -d --entitlements :- "$APP" 2>&1 | head -40 || true
+          echo "--- 主 App 签名信息 ---"
+          codesign -dv "$APP" 2>&1 | head -10 || true
+          echo "--- 断言：application-groups 必须存在 ---"
+          if codesign -d --entitlements :- "$APP" 2>&1 | grep -q "application-groups"; then
+            echo "OK: App Group entitlement 已写入"
+          else
+            echo "警告：未检测到 App Group entitlement —— App 将走代码内的回退路径（不崩溃，但无 App Group 共享）"
+          fi
+
       - name: 校验产物与最低系统版本
         run: |
           set -e
