@@ -797,20 +797,22 @@ struct UnifiedModelPicker: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if isMulti {
-            ToolbarItem(placement: .minisTopBarLeading) {
+        // [iOS 15 移植] ToolbarContentBuilder 的 if/else（buildEither）是 iOS 16+。
+        // 改为用 ToolbarItemGroup 承载条件内容 —— ViewBuilder 的 if 一直可用。
+        ToolbarItemGroup(placement: .minisTopBarLeading) {
+            if isMulti {
                 Button("Cancel") { dismiss() }
             }
-            ToolbarItem(placement: .minisTopBarTrailing) {
+        }
+        ToolbarItemGroup(placement: .minisTopBarTrailing) {
+            if isMulti {
                 Button("Add (\(selectedEntryIds.count))") {
                     config.onAddMulti?(selectedEntryIds)
                     dismiss()
                 }
                 .font(.body.weight(.semibold))
                 .disabled(selectedEntryIds.isEmpty)
-            }
-        } else {
-            ToolbarItem(placement: .minisTopBarTrailing) {
+            } else {
                 Button("Done") { dismiss() }
             }
         }

@@ -725,6 +725,82 @@ enum MinisFileProviderCompat {
     }
 }
 
+// MARK: - 17. 零散 iOS 16 API
+
+extension View {
+    /// `navigationSplitViewColumnWidth(min:ideal:max:)`（iOS 16+）的兼容版本。
+    /// iOS 15 没有 NavigationSplitView，无列宽概念，退化为 no-op。
+    @ViewBuilder
+    func minisNavigationSplitViewColumnWidth(min: CGFloat? = nil,
+                                             ideal: CGFloat? = nil,
+                                             max: CGFloat? = nil) -> some View {
+        if #available(iOS 16.0, *) {
+            self.navigationSplitViewColumnWidth(min: min, ideal: ideal, max: max)
+        } else {
+            self
+        }
+    }
+}
+
+extension ToolbarItemPlacement {
+    /// iOS 16 的 `.secondaryAction`，iOS 15 上回退为 `.automatic`。
+    static var minisSecondaryAction: ToolbarItemPlacement {
+        if #available(iOS 16.0, *) { return .secondaryAction }
+        return .automatic
+    }
+}
+
+extension Color {
+    /// `ShapeStyle.gradient`（iOS 16+）的兼容版本。
+    ///
+    /// iOS 15 回退为同色的 `LinearGradient` —— 视觉上接近「纯色填充」，
+    /// 只是没有 iOS 16 那种基于环境的自动明暗过渡。
+    var minisGradient: AnyShapeStyle {
+        if #available(iOS 16.0, *) {
+            return AnyShapeStyle(self.gradient)
+        }
+        return AnyShapeStyle(LinearGradient(colors: [self, self],
+                                            startPoint: .top, endPoint: .bottom))
+    }
+}
+
+/// 用 `NSRegularExpression` 实现的等价正则工具。
+///
+/// 上游用的是 Swift 5.7 的 Regex 字面量（`/…/`）与 `ranges(of:)` / `wholeMatch(of:)`，
+/// 这些 API 在运行时需要 iOS 16。本封装在全部系统版本上可用。
+enum MinisRegex {
+    /// 返回全部匹配区间。
+    static func ranges(of pattern: String, in text: String) -> [Range<String.Index>] {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            .compactMap { Range($0.range, in: text) }
+    }
+
+    /// 整体匹配判定（对应 `wholeMatch(of:)`）。
+    static func wholeMatch(of pattern: String, in text: String) -> Bool {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return false }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else {
+            return false
+        }
+        return m.range.location == 0 && m.range.length == ns.length
+    }
+}
+
+extension UITextView {
+    /// `UITextView(usingTextLayoutManager:)`（iOS 16+）的兼容构造。
+    ///
+    /// iOS 15 回退到 `UITextView()` —— 该版本只有 TextKit 1，
+    /// 没有可选的 TextKit 2 布局管理器。
+    static func minisMake(usingTextLayoutManager: Bool) -> UITextView {
+        if #available(iOS 16.0, *) {
+            return UITextView(usingTextLayoutManager: usingTextLayoutManager)
+        }
+        return UITextView()
+    }
+}
+
 // MARK: - 13. ShareLink（iOS 16）
 
 /// `ShareLink`（iOS 16+）的兼容版本。

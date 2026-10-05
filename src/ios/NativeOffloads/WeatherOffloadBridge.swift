@@ -18,6 +18,16 @@ import CoreLocation
         longitude lng: Double,
         completion: @escaping (NSDictionary?, Error?) -> Void
     ) {
+        // [iOS 15 移植] WeatherKit 整体是 iOS 16+。低版本直接回错误，
+        // 而不是让 ObjC 调用方在运行期撞上缺失符号。
+        guard #available(iOS 16.0, *) else {
+            completion(nil, NSError(
+                domain: "MinisWeather",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "WeatherKit requires iOS 16 or later."]
+            ))
+            return
+        }
         let location = CLLocation(latitude: lat, longitude: lng)
         let service = WeatherService.shared
 
