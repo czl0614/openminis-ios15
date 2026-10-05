@@ -809,23 +809,24 @@ extension UITextView {
 // MARK: - 18. 上下文菜单（iOS 16 重载）
 
 extension View {
-    /// 上下文菜单的兼容版本。
+    /// 上下文菜单的兼容版本（**带自定义长按预览**）。
     ///
-    /// 背景：工程里 31 处 `.contextMenu { }` 中，只有 4 处（都作用在
-    /// `Color.clear` 零尺寸覆盖层上）被解析到 iOS 16 的
-    /// `contextMenu(menuItems:preview:)`，其余 27 处正常走 iOS 13 版本。
-    /// 成因未完全定位，此处用显式 shim 消除不确定性。
+    /// 背景：工程里 31 处 `.contextMenu`，其中 27 处是单闭包形式
+    /// （`contextMenu(menuItems:)`，iOS 13+），另有 4 处是
+    /// `contextMenu { 菜单 } preview: { 预览 }` —— `preview:` 是 iOS 16 才有的，
+    /// 这 4 处因此报错。
     ///
-    /// iOS 16+ 行为与上游一致；iOS 15 退化为 no-op（该 4 处为消息气泡的
-    /// 复制/编辑/删除长按菜单，iOS 15 上不可用）。
+    /// iOS 15 回退：**保留菜单本身，只放弃自定义预览**（改用系统默认预览）。
+    /// 功能不丢失，仅长按预览卡片的外观退化为默认样式。
     @ViewBuilder
-    func minisContextMenu<MenuItems: View>(
-        @ViewBuilder menuItems: () -> MenuItems
+    func minisContextMenu<MenuItems: View, Preview: View>(
+        @ViewBuilder menuItems: () -> MenuItems,
+        @ViewBuilder preview: () -> Preview
     ) -> some View {
         if #available(iOS 16.0, *) {
-            self.contextMenu(menuItems: menuItems)
+            self.contextMenu(menuItems: menuItems, preview: preview)
         } else {
-            self
+            self.contextMenu(menuItems: menuItems)
         }
     }
 }
