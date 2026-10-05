@@ -1690,9 +1690,13 @@ struct AIChatView: View {
                         guard !vm.turnStartedByRetry else { return }
                         // Likewise a sub agent callback that landed in the gap.
                         guard !vm.isProcessing, !vm.turnWasSilentProgrammatic else { return }
-                        let lastAssistantLength = vm.messages.last.flatMap {
-                            $0.role == .assistant ? $0.blocks.reduce(0) { $0 + $1.content.count } : nil
-                        } ?? 0
+                        // [iOS 15 移植] 原为 flatMap + 三元 + reduce + `?? 0` 的单条链式表达式，
+                        // 类型检查器在该组合下报 "unable to type-check in reasonable time"。
+                        // 拆成带显式返回类型的立即求值闭包，语义完全不变。
+                        let lastAssistantLength: Int = {
+                            guard let last = vm.messages.last, last.role == .assistant else { return 0 }
+                            return last.blocks.reduce(0) { $0 + $1.content.count }
+                        }()
                         if lastAssistantLength < 600 {
                             AppLogger(category: "ContextUsageHint").info("[AutoFocus] +1.5s → inputFocused=true (lastAssistantLength=\(lastAssistantLength))")
                             inputFocused = true
