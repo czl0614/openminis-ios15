@@ -821,6 +821,149 @@ struct AIChatView: View {
         tryMarkWorkflowChatReady(reason: "onAppear")
     }
 
+    /// [iOS 15 移植] 从 `body` 修饰符链上的 `.sheet` 闭包抽出（62 行），降低 body 表达式复杂度。
+    @ViewBuilder
+    private var moveToSheetContent: some View {
+    // [T-ios-moveto-seed] Seed the picker with the last list the
+    // sidebar loaded. Read synchronously here because ViewModelCache is
+    // @MainActor and so is this body — no actor hop, no await, so the
+    // sheet has rows to draw on its very first frame. Its `.task` still
+    // runs and replaces them with the authoritative query.
+    MoveToSessionSheet(currentSessionId: vm.sessionId,
+                       initialSessions: ViewModelCache.recentSessionsSeed) { targetId in
+        // [T-ios-moveto-transfer-race] Stash bound to the target, so
+        // only that session can consume it.
+        let movedText = vm.inputText
+        let movedAttachments = vm.attachments
+        let stash = ViewModelCache.PendingTransfer(
+            targetId: targetId,
+            inputText: movedText,
+            attachments: movedAttachments
+        )
+        ViewModelCache.pendingTransfer = stash
+        // Clear the source composer optimistically so the move reads as
+        // instant, but keep a copy: if the target never consumes the
+        // stash (navigation swallowed, wrong session opened), restore it
+        // here rather than letting the user's content vanish. Attachment
+        // files are NOT deleted on this path — both the stash and this
+        // restore reference the same cacheURLs.
+        vm.inputText = ""
+        vm.attachments.removeAll()
+        // The share content is no longer here — reset the flag that
+        // gates the "Move to…" pill. Currently `hasMovableShareContent`
+        // hides the pill anyway now the composer is empty, so this is
+        // not user-visible, but leaving it true is a latent trap for
+        // anything else that reads it.
+        hasInjectedShareContent = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + ViewModelCache.PendingTransfer.staleAfter) {
+            // Match the exact stash we staged, not just its target: a
+            // second move to the same target within the stale window
+            // replaces the slot, and this timer must not restore that
+            // newer content out from under it.
+            guard let stranded = ViewModelCache.pendingTransfer,
+                  stranded.targetId == targetId,
+                  stranded.createdAt == stash.createdAt else { return }
+            // Still sitting in the slot → nobody consumed it.
+            ViewModelCache.pendingTransfer = nil
+            minisLogger.info("[MoveTo] Transfer to \(targetId) was never consumed — restoring content to source session")
+            if vm.inputText.isEmpty {
+                vm.inputText = movedText
+            } else if !movedText.isEmpty {
+                vm.inputText += "\n" + movedText
+            }
+            vm.attachments.append(contentsOf: movedAttachments)
+        }
+        // Dismiss keyboard first so it doesn't linger during transition
+        inputFocused = false
+        // Post navigation after sheet dismiss animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NotificationCenter.default.post(
+                name: .moveInputToSession,
+                object: nil,
+                userInfo: ["targetId": targetId]
+            )
+        }
+    }
+    }
+
+    /// [iOS 15 移植] 从 `body` 修饰符链上的 `.onChange(of: vm.isProcessing)` 闭包抽出（72 行）。
+    ///
+    /// `body` 是 900+ 行的单一 ViewBuilder 表达式；部署目标降到 15.4 后，
+    /// 编译器要为每个重载候选做可用性检查，额外开销会让其中的语句
+    /// 报 "unable to type-check this expression in reasonable time"。
+    private func handleProcessingChange(_ processing: Bool) {
+    if !processing {
+        // Reply reading is handled INCREMENTALLY during streaming (the
+        // SSE loop splits into sentences/titles + tool announcements and
+        // queues them as they arrive — see speakQueued/extractNewSentences).
+        // No whole-reply speak here; that would double-read everything.
+        // [T-keyboard-auto-pop default flip] Gate behind a Settings
+        // toggle. Default ON — most users want the composer ready
+        // for a follow-up immediately. `object(forKey:)` lets us
+        // distinguish "never toggled" (nil → use new ON default)
+        // from "explicitly set OFF" (NSNumber(false) → respect).
+        // Existing length-based skip is still applied so very long
+        // replies still don't trigger the auto-focus.
+        let autoFocusEnabled = (UserDefaults.standard.object(forKey: "chat.autoFocusAfterReply") as? Bool) ?? true
+        guard autoFocusEnabled else { return }
+        // [T-ios-retry-keyboard] Don't treat the end of a RETRIED turn
+        // as "a reply arrived".
+        //
+        // Trigger chain being cut: the user taps Retry on a failure from
+        // a while back -> retry() sets isProcessing=true -> the re-sent
+        // request fails fast (kernel down, no concurrency slot, or an
+        // immediate provider error) -> isProcessing flips back to false
+        // -> this observer fires. The edge is indistinguishable from a
+        // successful reply, and the delayed block's guards now all pass
+        // (the user IS looking at the chat, nothing is queued, and the
+        // errored message is short so the <600 length check succeeds) —
+        // so the keyboard rises seconds after a tap that only meant
+        // "try that again".
+        //
+        // Scoped to the turn's ORIGIN, not its outcome: auto-focus when
+        // a fresh send fails is existing, accepted behaviour and is
+        // deliberately left alone. Consumed (not just read) so it
+        // governs exactly one turn.
+        let wasRetry = vm.turnStartedByRetry
+        vm.turnStartedByRetry = false
+        guard !wasRetry else { return }
+        // [T-subagent-callback-no-keyboard] Nor the end of a turn the
+        // USER never started. A background sub agent reporting progress
+        // (or its final result) arrives as a silent programmatic prompt
+        // and drives a full parent turn, so this observer fired and
+        // raised the keyboard mid-read — repeatedly, once per report.
+        // Consumed like `wasRetry` so it governs exactly one turn.
+        let wasSilent = vm.turnWasSilentProgrammatic
+        vm.turnWasSilentProgrammatic = false
+        guard !wasSilent else { return }
+        if GCKeyboard.coalesced != nil {
+            AppLogger(category: "ContextUsageHint").info("[AutoFocus] immediate (hardware keyboard) → inputFocused=true")
+            inputFocused = true
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                guard !hasOverlayPresented, isChatViewVisible else { return }
+                guard !vm.isProcessing, vm.promptQueue.isEmpty else { return }
+                // Re-check: a retry started during the 1.5s window would
+                // otherwise be focused by this older timer.
+                guard !vm.turnStartedByRetry else { return }
+                // Likewise a sub agent callback that landed in the gap.
+                guard !vm.isProcessing, !vm.turnWasSilentProgrammatic else { return }
+                // [iOS 15 移植] 原为 flatMap + 三元 + reduce + `?? 0` 的单条链式表达式，
+                // 类型检查器在该组合下报 "unable to type-check in reasonable time"。
+                // 拆成带显式返回类型的立即求值闭包，语义完全不变。
+                let lastAssistantLength: Int = {
+                    guard let last = vm.messages.last, last.role == .assistant else { return 0 }
+                    return last.blocks.reduce(0) { $0 + $1.content.count }
+                }()
+                if lastAssistantLength < 600 {
+                    AppLogger(category: "ContextUsageHint").info("[AutoFocus] +1.5s → inputFocused=true (lastAssistantLength=\(lastAssistantLength))")
+                    inputFocused = true
+                }
+            }
+        }
+    }
+    }
+
     var body: some View {
         ZStack {
             // Messages — floating tool preview overlaid at bottom
@@ -1402,66 +1545,7 @@ struct AIChatView: View {
             SessionMemoryView(vm: cached.vm)
         }
         .sheet(isPresented: $showMoveToSheet) {
-            // [T-ios-moveto-seed] Seed the picker with the last list the
-            // sidebar loaded. Read synchronously here because ViewModelCache is
-            // @MainActor and so is this body — no actor hop, no await, so the
-            // sheet has rows to draw on its very first frame. Its `.task` still
-            // runs and replaces them with the authoritative query.
-            MoveToSessionSheet(currentSessionId: vm.sessionId,
-                               initialSessions: ViewModelCache.recentSessionsSeed) { targetId in
-                // [T-ios-moveto-transfer-race] Stash bound to the target, so
-                // only that session can consume it.
-                let movedText = vm.inputText
-                let movedAttachments = vm.attachments
-                let stash = ViewModelCache.PendingTransfer(
-                    targetId: targetId,
-                    inputText: movedText,
-                    attachments: movedAttachments
-                )
-                ViewModelCache.pendingTransfer = stash
-                // Clear the source composer optimistically so the move reads as
-                // instant, but keep a copy: if the target never consumes the
-                // stash (navigation swallowed, wrong session opened), restore it
-                // here rather than letting the user's content vanish. Attachment
-                // files are NOT deleted on this path — both the stash and this
-                // restore reference the same cacheURLs.
-                vm.inputText = ""
-                vm.attachments.removeAll()
-                // The share content is no longer here — reset the flag that
-                // gates the "Move to…" pill. Currently `hasMovableShareContent`
-                // hides the pill anyway now the composer is empty, so this is
-                // not user-visible, but leaving it true is a latent trap for
-                // anything else that reads it.
-                hasInjectedShareContent = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + ViewModelCache.PendingTransfer.staleAfter) {
-                    // Match the exact stash we staged, not just its target: a
-                    // second move to the same target within the stale window
-                    // replaces the slot, and this timer must not restore that
-                    // newer content out from under it.
-                    guard let stranded = ViewModelCache.pendingTransfer,
-                          stranded.targetId == targetId,
-                          stranded.createdAt == stash.createdAt else { return }
-                    // Still sitting in the slot → nobody consumed it.
-                    ViewModelCache.pendingTransfer = nil
-                    minisLogger.info("[MoveTo] Transfer to \(targetId) was never consumed — restoring content to source session")
-                    if vm.inputText.isEmpty {
-                        vm.inputText = movedText
-                    } else if !movedText.isEmpty {
-                        vm.inputText += "\n" + movedText
-                    }
-                    vm.attachments.append(contentsOf: movedAttachments)
-                }
-                // Dismiss keyboard first so it doesn't linger during transition
-                inputFocused = false
-                // Post navigation after sheet dismiss animation completes
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    NotificationCenter.default.post(
-                        name: .moveInputToSession,
-                        object: nil,
-                        userInfo: ["targetId": targetId]
-                    )
-                }
-            }
+            moveToSheetContent
         }
         .fullScreenCover(isPresented: $showTerminal) {
             terminalInitCommand = nil
@@ -1660,76 +1744,7 @@ struct AIChatView: View {
             return .finished
         }
         .onChange(of: vm.isProcessing) { processing in
-            if !processing {
-                // Reply reading is handled INCREMENTALLY during streaming (the
-                // SSE loop splits into sentences/titles + tool announcements and
-                // queues them as they arrive — see speakQueued/extractNewSentences).
-                // No whole-reply speak here; that would double-read everything.
-                // [T-keyboard-auto-pop default flip] Gate behind a Settings
-                // toggle. Default ON — most users want the composer ready
-                // for a follow-up immediately. `object(forKey:)` lets us
-                // distinguish "never toggled" (nil → use new ON default)
-                // from "explicitly set OFF" (NSNumber(false) → respect).
-                // Existing length-based skip is still applied so very long
-                // replies still don't trigger the auto-focus.
-                let autoFocusEnabled = (UserDefaults.standard.object(forKey: "chat.autoFocusAfterReply") as? Bool) ?? true
-                guard autoFocusEnabled else { return }
-                // [T-ios-retry-keyboard] Don't treat the end of a RETRIED turn
-                // as "a reply arrived".
-                //
-                // Trigger chain being cut: the user taps Retry on a failure from
-                // a while back -> retry() sets isProcessing=true -> the re-sent
-                // request fails fast (kernel down, no concurrency slot, or an
-                // immediate provider error) -> isProcessing flips back to false
-                // -> this observer fires. The edge is indistinguishable from a
-                // successful reply, and the delayed block's guards now all pass
-                // (the user IS looking at the chat, nothing is queued, and the
-                // errored message is short so the <600 length check succeeds) —
-                // so the keyboard rises seconds after a tap that only meant
-                // "try that again".
-                //
-                // Scoped to the turn's ORIGIN, not its outcome: auto-focus when
-                // a fresh send fails is existing, accepted behaviour and is
-                // deliberately left alone. Consumed (not just read) so it
-                // governs exactly one turn.
-                let wasRetry = vm.turnStartedByRetry
-                vm.turnStartedByRetry = false
-                guard !wasRetry else { return }
-                // [T-subagent-callback-no-keyboard] Nor the end of a turn the
-                // USER never started. A background sub agent reporting progress
-                // (or its final result) arrives as a silent programmatic prompt
-                // and drives a full parent turn, so this observer fired and
-                // raised the keyboard mid-read — repeatedly, once per report.
-                // Consumed like `wasRetry` so it governs exactly one turn.
-                let wasSilent = vm.turnWasSilentProgrammatic
-                vm.turnWasSilentProgrammatic = false
-                guard !wasSilent else { return }
-                if GCKeyboard.coalesced != nil {
-                    AppLogger(category: "ContextUsageHint").info("[AutoFocus] immediate (hardware keyboard) → inputFocused=true")
-                    inputFocused = true
-                } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        guard !hasOverlayPresented, isChatViewVisible else { return }
-                        guard !vm.isProcessing, vm.promptQueue.isEmpty else { return }
-                        // Re-check: a retry started during the 1.5s window would
-                        // otherwise be focused by this older timer.
-                        guard !vm.turnStartedByRetry else { return }
-                        // Likewise a sub agent callback that landed in the gap.
-                        guard !vm.isProcessing, !vm.turnWasSilentProgrammatic else { return }
-                        // [iOS 15 移植] 原为 flatMap + 三元 + reduce + `?? 0` 的单条链式表达式，
-                        // 类型检查器在该组合下报 "unable to type-check in reasonable time"。
-                        // 拆成带显式返回类型的立即求值闭包，语义完全不变。
-                        let lastAssistantLength: Int = {
-                            guard let last = vm.messages.last, last.role == .assistant else { return 0 }
-                            return last.blocks.reduce(0) { $0 + $1.content.count }
-                        }()
-                        if lastAssistantLength < 600 {
-                            AppLogger(category: "ContextUsageHint").info("[AutoFocus] +1.5s → inputFocused=true (lastAssistantLength=\(lastAssistantLength))")
-                            inputFocused = true
-                        }
-                    }
-                }
-            }
+            handleProcessingChange(processing)
         }
         // [T-ios-retry-hide-when-processing] Inject the view model so deep
         // descendants (e.g. ToolCapsuleView's long-press menu) can react to
