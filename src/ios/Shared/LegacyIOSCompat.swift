@@ -905,37 +905,33 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
 
     private let host: UIHostingController<Content>
     private weak var attachedParent: UIViewController?
-    private var minWidth: CGFloat = 0
-    private var minHeight: CGFloat = 0
 
     init(configuration: MinisLegacyHostingConfiguration<Content>) {
         self.configuration = configuration
         self.host = UIHostingController(rootView: configuration.content)
-        self.minWidth = configuration.minWidth
-        self.minHeight = configuration.minHeight
         super.init(frame: .zero)
 
-        // [关键] 必须把 hosting controller 作为 **child view controller** 挂上去。
+        // 把 hosting controller 作为 **child view controller** 挂上去。
         //
         // 只 addSubview 而不建立父子关系时，hosting controller 的视图不在
-        // view-controller 层级里：它的 traitCollection / safeAreaInsets 都是错的，
-        // SwiftUI 拿到的是一个尺寸不确定的容器。消息内容用的是
-        // `.frame(maxWidth: .infinity)`（填满单元格宽度），容器尺寸一旦不对，
-        // 整块内容就会偏移。
+        // view-controller 层级里：traitCollection / safeAreaInsets 都是错的，
+        // SwiftUI 拿到的是一个尺寸不确定的容器。消息内容用
+        // `.frame(maxWidth: .infinity)`，对容器尺寸敏感。
         if let parent = Self.nearestViewController(from: self) {
             parent.addChild(host)
-            host.view.backgroundColor = .clear
-            host.view.frame = bounds
-            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(host.view)
-            host.didMove(toParent: parent)
             attachedParent = parent
-        } else {
-            host.view.backgroundColor = .clear
-            host.view.frame = bounds
-            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(host.view)
         }
+
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        host.didMove(toParent: attachedParent)
     }
 
     @available(*, unavailable)
@@ -950,60 +946,25 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
         }
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // 确定性布局：让 hosting 视图严格等于自身 bounds。
-        if host.view.frame != bounds {
-            host.view.frame = bounds
-        }
-    }
-
-    // MARK: - 自适应尺寸
+    // MARK: - 尺寸
     //
-    // [必须实现] `UICollectionViewCell` 的自适应高度链路是
-    //   cell.preferredLayoutAttributesFitting → super → 本视图.systemLayoutSizeFitting。
-    // 本视图是纯 frame 布局（无 Auto Layout 约束），若沿用 UIView 默认实现，
-    // 在给定宽度下量不出正确高度 → 单元格高度算小 → **相邻单元格互相重叠、
-    // 文字看起来「乱序」**。所以必须显式按目标宽度测量 hosting 内容。
-
-    override func systemLayoutSizeFitting(
-        _ targetSize: CGSize,
-        withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority,
-        verticalFittingPriority: UILayoutPriority
-    ) -> CGSize {
-        let width = targetSize.width > 0 ? targetSize.width : bounds.width
-        guard width > 0, width.isFinite else {
-            return CGSize(width: max(minWidth, 0), height: max(minHeight, 0))
-        }
-        // 先在目标宽度下布局，再取拟合高度 —— 顺序很重要，
-        // 否则 UITextView 会按旧宽度换行，量出的高度不对。
-        let previousFrame = host.view.frame
-        host.view.frame = CGRect(x: 0, y: 0, width: width, height: max(previousFrame.height, 1))
-        host.view.setNeedsLayout()
-        host.view.layoutIfNeeded()
-
-        let measured = host.view.systemLayoutSizeFitting(
-            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        )
-        return CGSize(width: width, height: max(ceil(measured.height), minHeight))
-    }
-
-    override func sizeThatFits(_ size: CGSize) -> CGSize {
-        systemLayoutSizeFitting(
-            size,
-            withHorizontalFittingPriority: size.width > 0 ? .required : .fittingSizeLevel,
-            verticalFittingPriority: .fittingSizeLevel
-        )
-    }
+    // 用 **Auto Layout 约束** 表达尺寸，**不要**手写 systemLayoutSizeFitting。
+    //
+    // 历史教训（两次回归都出在这里）：
+    //   · 改成纯 frame 布局（frame = bounds）后，UIView 默认的
+    //     systemLayoutSizeFitting 失去约束依据 → 单元格高度算小 → 单元格重叠。
+    //   · 为补高度而手写 systemLayoutSizeFitting 并在其中调用 layoutIfNeeded()
+    //     更糟：本方法是从 UICollectionView 的布局过程中被调用的，
+    //     强制同步布局会重入集合视图布局，SwiftUI 视图图被并发修改 →
+    //     EXC_BAD_ACCESS（崩溃日志里 SelfSizingCell.preferredLayoutAttributesFitting
+    //     → AppLogger.emit → Swift 运行期，地址被踩成字符串数据）。
+    //
+    // 约束方案下，UIKit 走标准链路即可同时得到正确的宽度与高度，
+    // 且 systemLayoutSizeFitting 是**纯测量**、不触发布局重入。
 
     private func applyConfiguration() {
         guard let cfg = configuration as? MinisLegacyHostingConfiguration<Content> else { return }
-        minWidth = cfg.minWidth
-        minHeight = cfg.minHeight
         host.rootView = cfg.content
-        setNeedsLayout()
     }
 
     /// 沿 responder 链向上找最近的 view controller（cell → collectionView → VC）。
