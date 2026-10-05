@@ -801,6 +801,130 @@ extension UITextView {
     }
 }
 
+// MARK: - 18. 上下文菜单（iOS 16 重载）
+
+extension View {
+    /// 上下文菜单的兼容版本。
+    ///
+    /// 背景：工程里 31 处 `.contextMenu { }` 中，只有 4 处（都作用在
+    /// `Color.clear` 零尺寸覆盖层上）被解析到 iOS 16 的
+    /// `contextMenu(menuItems:preview:)`，其余 27 处正常走 iOS 13 版本。
+    /// 成因未完全定位，此处用显式 shim 消除不确定性。
+    ///
+    /// iOS 16+ 行为与上游一致；iOS 15 退化为 no-op（该 4 处为消息气泡的
+    /// 复制/编辑/删除长按菜单，iOS 15 上不可用）。
+    @ViewBuilder
+    func minisContextMenu<MenuItems: View>(
+        @ViewBuilder menuItems: () -> MenuItems
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.contextMenu(menuItems: menuItems)
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - 19. UIHostingConfiguration（iOS 16）
+
+/// `UIHostingConfiguration`（iOS 16+）的兼容包装。
+///
+/// 设计成「延迟到最后一刻才决定用哪条路径」：
+/// iOS 16+ 转发到系统实现（与上游行为完全一致），iOS 15 走
+/// `UIContentConfiguration` + `UIHostingController` 的等价实现。
+///
+/// 用法上只需把 `cell.applyContentConfiguration(config)` 改成
+/// `cell.applyContentConfiguration(config.makeConfiguration())`。
+struct MinisHostingConfiguration<Content: View> {
+    let content: Content
+    var minWidth: CGFloat = 0
+    var minHeight: CGFloat = 0
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    func minSize(width: CGFloat, height: CGFloat) -> MinisHostingConfiguration {
+        var copy = self
+        copy.minWidth = width
+        copy.minHeight = height
+        return copy
+    }
+
+    /// 上游调用点传的都是 `.all, 0`；iOS 15 回退路径本身无边距概念。
+    func margins(_ edges: Edge.Set, _ length: CGFloat) -> MinisHostingConfiguration {
+        self
+    }
+
+    /// 生成真正赋给 `contentConfiguration` 的对象。
+    func makeConfiguration() -> any UIContentConfiguration {
+        if #available(iOS 16.0, *) {
+            return UIHostingConfiguration { content }
+                .minSize(width: minWidth, height: minHeight)
+                .margins(.all, 0)
+        }
+        return MinisLegacyHostingConfiguration(content: content,
+                                               minWidth: minWidth,
+                                               minHeight: minHeight)
+    }
+}
+
+/// iOS 15 回退路径的 `UIContentConfiguration`。
+struct MinisLegacyHostingConfiguration<Content: View>: UIContentConfiguration {
+    let content: Content
+    var minWidth: CGFloat = 0
+    var minHeight: CGFloat = 0
+
+    func makeContentView() -> UIView & UIContentView {
+        MinisLegacyHostingContentView(configuration: self)
+    }
+
+    func updated(for state: UIConfigurationState) -> MinisLegacyHostingConfiguration {
+        self
+    }
+}
+
+/// 用 `UIHostingController` 承载 SwiftUI 内容的 `UIContentView`。
+final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView {
+    var configuration: UIContentConfiguration {
+        didSet { applyConfiguration() }
+    }
+
+    private let host: UIHostingController<Content>
+
+    init(configuration: MinisLegacyHostingConfiguration<Content>) {
+        self.configuration = configuration
+        self.host = UIHostingController(rootView: configuration.content)
+        super.init(frame: .zero)
+
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        if configuration.minWidth > 0 {
+            widthAnchor.constraint(greaterThanOrEqualToConstant: configuration.minWidth).isActive = true
+        }
+        if configuration.minHeight > 0 {
+            heightAnchor.constraint(greaterThanOrEqualToConstant: configuration.minHeight).isActive = true
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func applyConfiguration() {
+        guard let cfg = configuration as? MinisLegacyHostingConfiguration<Content> else { return }
+        host.rootView = cfg.content
+    }
+}
+
 // MARK: - 13. ShareLink（iOS 16）
 
 /// `ShareLink`（iOS 16+）的兼容版本。

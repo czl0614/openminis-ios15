@@ -350,7 +350,7 @@ private struct BridgedAssistantBlockV3: View {
         // (same pattern as BridgedAssistantFooterV3).
         .overlay {
             Color.clear.frame(width: 0, height: 0)
-                .contextMenu {
+                .minisContextMenu {
                     Button {
                         let text = message.blocks
                             .filter { if case .text = $0.kind { return true }; return false }
@@ -525,7 +525,7 @@ private struct BridgedAssistantFooterV3: View {
         // report inflated heights to systemLayoutSizeFitting, causing height oscillation.
         .overlay {
             Color.clear.frame(width: 0, height: 0)
-                .contextMenu {
+                .minisContextMenu {
                     Button {
                         let text = message.blocks
                             .filter { if case .text = $0.kind { return true }; return false }
@@ -1378,7 +1378,7 @@ extension CollectionViewMessageListV3 {
                 let message = messages[msgIdx]
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisHostingConfiguration {
                     BridgedWholeMessageV3(
                         message: message,
                         bridge: bridge,
@@ -1404,19 +1404,19 @@ extension CollectionViewMessageListV3 {
                     // [T-ios-tool-capsule-vm-envobject-crash]
                     .environmentObject(vm)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
-                cell.applyContentConfiguration(config)
+                cell.applyContentConfiguration(config.makeConfiguration())
 
             case .assistantHeader(let msgId):
                 guard let msgIdx = messageIndex[msgId], msgIdx < messages.count else { return }
                 let message = messages[msgIdx]
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisHostingConfiguration {
                     BridgedAssistantHeaderV3(message: message, maxWidth: width,
                                             onOpenSoulSettings: onOpenSoulSettings)
                         .transaction { $0.disablesAnimations = true }
                         .environmentObject(vm)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
-                cell.applyContentConfiguration(config)
+                cell.applyContentConfiguration(config.makeConfiguration())
 
             case .assistantBlock(let msgId, let blockId):
                 guard let msgIdx = messageIndex[msgId], msgIdx < messages.count else {
@@ -1430,7 +1430,7 @@ extension CollectionViewMessageListV3 {
                 }
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisHostingConfiguration {
                     BridgedAssistantBlockV3(
                         block: block,
                         message: message,
@@ -1440,14 +1440,14 @@ extension CollectionViewMessageListV3 {
                     .transaction { $0.disablesAnimations = true }
                     .environmentObject(vm)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
-                cell.applyContentConfiguration(config)
+                cell.applyContentConfiguration(config.makeConfiguration())
 
             case .assistantFooter(let msgId):
                 guard let msgIdx = messageIndex[msgId], msgIdx < messages.count else { return }
                 let message = messages[msgIdx]
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisHostingConfiguration {
                     BridgedAssistantFooterV3(
                         message: message,
                         bridge: bridge,
@@ -1456,7 +1456,7 @@ extension CollectionViewMessageListV3 {
                     .transaction { $0.disablesAnimations = true }
                     .environmentObject(vm)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
-                cell.applyContentConfiguration(config)
+                cell.applyContentConfiguration(config.makeConfiguration())
             }
 
             // [T-ios-scroll-decel-height-drift] Seed this cell with the real
