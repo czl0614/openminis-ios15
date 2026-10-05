@@ -569,7 +569,9 @@ struct AIChatView: View {
             if didSeedInputBarHeight,
                latestH <= 0 || abs(latestH - committedH) > 0.5 {
                 didSeedInputBarHeight = false
-                AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — composer geometry stale (committed=\(committedH) latest=\(latestH) lastReport=\(String(format: "%.1f", sinceReport))s ago); re-arming seed so the next callback re-measures")
+                let sinceReportText = String(format: "%.1f", sinceReport)
+                let staleDetail: String = "committed=\(committedH) latest=\(latestH) lastReport=\(sinceReportText)s ago"
+                AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene active — composer geometry stale (" + staleDetail + "); re-arming seed so the next callback re-measures")
             }
 
             // [T-voice-inputbar-collapse-selfheal] Re-arming only makes the
@@ -590,7 +592,11 @@ struct AIChatView: View {
                 if ticked {
                     AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(latestInputBarFrameH) committed=\(inputBarHeight))")
                 } else {
-                    AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. committed=\(inputBarHeight) latest=\(latestInputBarFrameH) lastReport=\(String(format: "%.1f", age))s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight). The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
+                    // [iOS 15 移植] 拆开长插值。部署目标降到 15.4 后，编译器要为每个重载
+                    // 做可用性检查，多段插值的约束求解会超出类型检查预算。
+                    let ageText = String(format: "%.1f", age)
+                    let healthDetail: String = "committed=\(inputBarHeight) latest=\(latestInputBarFrameH) lastReport=\(ageText)s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight)"
+                    AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. " + healthDetail + ". The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
                 }
             }
             // [T-voice-bg-fg-gap] Foreground reseal: if we return to a
@@ -626,7 +632,9 @@ struct AIChatView: View {
             if let keyWindow {
                 let hadResponder = keyWindow.endEditing(true)
                 UIView.performWithoutAnimation { keyWindow.layoutIfNeeded() }
-                AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene \(phase == .inactive ? "inactive" : "background") — forced keyboard-dismiss completion (hadResponder=\(hadResponder)) voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript)")
+                let phaseName = phase == .inactive ? "inactive" : "background"
+                let sceneDetail: String = "hadResponder=\(hadResponder) voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript)"
+                AppLogger(category: "InputBarLayout").info("[voice-bgfg] scene " + phaseName + " — forced keyboard-dismiss completion (" + sceneDetail + ")")
             }
         }
         if phase != .active, speechManager.state == .recording {
@@ -1515,7 +1523,11 @@ struct AIChatView: View {
                         vm.forceScrollToBottom.send()
                     }
                     let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
+                    // [iOS 15 移植] 拆出中间变量。部署目标降到 15.4 后，编译器需为每个
+                    // 重载做可用性检查，长插值 + 嵌套 String(format:) 会超出类型检查预算。
+                    let totalElapsedText = String(format: "%.1f", totalElapsed)
+                    let mountElapsedText = String(format: "%.1f", mountElapsed)
+                    minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(totalElapsedText)ms [mount: \(mountElapsedText) | msgs: \(vm.messages.count)]")
                 }
             } else {
                 minisLogger.info("🔄SESSION AIChatView.onAppear nil sessionId — draft mode")
@@ -1592,7 +1604,8 @@ struct AIChatView: View {
                 AppLogger(category: "InputBarLayout").info("chat onDisappear — released a lingering first responder (would have left a phantom keyboard inset on the window)")
             }
             // Capsule auto-shows whenever audio is loaded — no manual activation needed.
-            minisLogger.info("🔑DRAFT AIChatView.onDisappear vm=\(vm.vmInstanceId) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") vm.sessionId=\(vm.sessionId ?? "nil") vm.isProcessing=\(vm.isProcessing)")
+            let disappearDetail: String = "vm=\(vm.vmInstanceId) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") vm.sessionId=\(vm.sessionId ?? "nil") vm.isProcessing=\(vm.isProcessing)"
+            minisLogger.info("🔑DRAFT AIChatView.onDisappear " + disappearDetail)
         }
         // [T-voice-bg-fg-gap] Structural immunity: while the voice panel is up
         // and the transcript editor is NOT open, there is no legitimate keyboard
