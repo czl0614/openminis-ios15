@@ -1658,8 +1658,10 @@ struct AIChatView: View {
                                 // 兼容层（同时编入扩展目标）引用不到它，因此视频加载放在这里。
                                 var videoURL: URL?
                                 if #available(iOS 16.0, *), let sdk = job.item.sdkItem {
+                                    // `try?` 会把 loadTransferable 返回的 T? 扁平化，
+                                    // 所以这里 loaded 已经是非可选值。
                                     if let loaded = try? await sdk.loadTransferable(type: VideoFileTransferable.self) {
-                                        videoURL = loaded?.url
+                                        videoURL = loaded.url
                                     }
                                 }
                                 if let videoURL {
