@@ -807,7 +807,10 @@ struct AIChatView: View {
                 inputFocused = true
             }
         }
-        minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(sessionId ?? "nil") bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
+        // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+        // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+        let logSessionId = sessionId ?? "nil"
+        minisLogger.info("[Share] AIChatView.onAppear: sessionId=\(logSessionId) bufferVersion=\(shareCoordinator.bufferVersion) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
         injectPendingShareIfNeeded()
         injectPendingTransferIfNeeded()
         isChatViewVisible = true
@@ -1175,7 +1178,10 @@ struct AIChatView: View {
                     // whether a center-spinner report corresponds to
                     // this overlay or some other ProgressView in the
                     // chat.
-                    minisLogger.warning("[SpinnerTrace] isLoadingSession → \(newValue) sid=\(vm.sessionId?.prefix(8) ?? "nil") msgs=\(vm.messages.count)")
+                    // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+                    // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+                    let logSidPrefix = vm.sessionId?.prefix(8) ?? "nil"
+                    minisLogger.warning("[SpinnerTrace] isLoadingSession → \(newValue) sid=\(logSidPrefix) msgs=\(vm.messages.count)")
                 }
 
             // Full-screen kernel boot overlay
@@ -1698,7 +1704,11 @@ struct AIChatView: View {
         }
         .onChange(of: shareCoordinator.bufferVersion) { newVersion in
             // Warm start: user is already in a session when share arrives
-            minisLogger.info("[Share] AIChatView.onChange(bufferVersion)=\(newVersion) sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil") hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
+            // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+            // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+            let logSessionId = sessionId ?? "nil"
+            let logDraftId = draftId ?? "nil"
+            minisLogger.info("[Share] AIChatView.onChange(bufferVersion)=\(newVersion) sessionId=\(logSessionId) draftId=\(logDraftId) hasBuffer=\(shareCoordinator.pendingShareBuffer != nil)")
             injectPendingShareIfNeeded()
         }
         .onDisappear {
@@ -1875,7 +1885,11 @@ struct AIChatView: View {
         // destination on the buffer before navigating; a nil stamp (cold
         // launch, where the launch flow owns the choice) still passes.
         guard shareCoordinator.bufferTargets(sessionId, draftId: draftId) else {
-            minisLogger.info("[Share] injectPendingShareIfNeeded — buffer is addressed to another session (mine: sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil")); leaving it")
+            // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+            // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+            let logSessionId = sessionId ?? "nil"
+            let logDraftId = draftId ?? "nil"
+            minisLogger.info("[Share] injectPendingShareIfNeeded — buffer is addressed to another session (mine: sessionId=\(logSessionId) draftId=\(logDraftId)); leaving it")
             return
         }
         guard let pending = shareCoordinator.consumeBuffer() else {
@@ -3250,7 +3264,10 @@ struct AIChatView: View {
         minisLogger.info("[Drop] handleDropProviders called with \(providers.count) provider(s)")
         for (index, provider) in providers.enumerated() {
             let types = provider.registeredTypeIdentifiers
-            minisLogger.info("[Drop] provider[\(index)] types=\(types) suggestedName=\(provider.suggestedName ?? "nil")")
+            // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+            // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+            let logSuggestedName = provider.suggestedName ?? "nil"
+            minisLogger.info("[Drop] provider[\(index)] types=\(types) suggestedName=\(logSuggestedName)")
 
             // Determine if this provider represents a file (vs. inline text).
             let hasFileType = types.contains { id in
@@ -4951,7 +4968,11 @@ struct AIChatView: View {
         // Intercept slash commands — execute instead of sending to LLM
         if vm.tryExecuteInputAsSlashCommand() { return }
 
-        minisLogger.info("🔑DRAFT performSend vm=\(vm.vmInstanceId) vm.sessionId=\(vm.sessionId ?? "nil") draftId=\(draftId ?? "nil") inputText='\(String(vm.inputText.prefix(50)))' isProcessing=\(vm.isProcessing)")
+        // [iOS 15 移植] 把 `??` 表达式提到独立 let：`??` 的重载数量极大，
+        // 叠加字符串插值的 appendInterpolation 重载会超出类型检查预算。
+        let logVmSessionId = vm.sessionId ?? "nil"
+        let logDraftId = draftId ?? "nil"
+        minisLogger.info("🔑DRAFT performSend vm=\(vm.vmInstanceId) vm.sessionId=\(logVmSessionId) draftId=\(logDraftId) inputText='\(String(vm.inputText.prefix(50)))' isProcessing=\(vm.isProcessing)")
         // Keep SwiftUI focus when a hardware keyboard is connected — dropping
         // it would force the user to tap the field again before typing the
         // next message. With only the software keyboard, clear focus and
