@@ -1236,7 +1236,15 @@ struct AIChatView: View {
                     for job in jobs {
                         group.addTask {
                             if job.isVideo {
-                                if let videoURL = await job.item.loadVideoFileURL() {
+                                // [iOS 15 移植] VideoFileTransferable 定义在本文件所在的主 App 目标内，
+                                // 兼容层（同时编入扩展目标）引用不到它，因此视频加载放在这里。
+                                var videoURL: URL?
+                                if #available(iOS 16.0, *), let sdk = job.item.sdkItem {
+                                    if let loaded = try? await sdk.loadTransferable(type: VideoFileTransferable.self) {
+                                        videoURL = loaded?.url
+                                    }
+                                }
+                                if let videoURL {
                                     await MainActor.run {
                                         vm.finalizeVideoPlaceholder(id: job.id, from: videoURL, originalDate: job.date)
                                     }

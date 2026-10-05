@@ -952,6 +952,23 @@ struct MinisPhotosPickerItem: Hashable {
     @available(iOS 16.0, *)
     var sdkItem: PhotosPickerItem? { storage as? PhotosPickerItem }
 
+    /// `Any?` 本身不是 `Hashable`，因此手写等价性：以底层 `PhotosPickerItem` 为准。
+    /// iOS 15 上所有实例都是空包装，一律视为相等。
+    static func == (lhs: MinisPhotosPickerItem, rhs: MinisPhotosPickerItem) -> Bool {
+        if #available(iOS 16.0, *) {
+            return lhs.sdkItem == rhs.sdkItem
+        }
+        return true
+    }
+
+    func hash(into hasher: inout Hasher) {
+        if #available(iOS 16.0, *), let item = sdkItem {
+            hasher.combine(item)
+        } else {
+            hasher.combine(0)
+        }
+    }
+
     /// 对应 `PhotosPickerItem.supportedContentTypes`。
     var supportedContentTypes: [UTType] {
         if #available(iOS 16.0, *) { return sdkItem?.supportedContentTypes ?? [] }
@@ -973,17 +990,10 @@ struct MinisPhotosPickerItem: Hashable {
         return nil
     }
 
-    /// 对应 `loadTransferable(type: VideoFileTransferable.self)`，直接返回文件 URL。
-    func loadVideoFileURL() async -> URL? {
-        if #available(iOS 16.0, *) {
-            guard let item = sdkItem else { return nil }
-            guard let file = try? await item.loadTransferable(type: VideoFileTransferable.self) else {
-                return nil
-            }
-            return file?.url
-        }
-        return nil
-    }
+    // 注意：这里**不**提供「加载视频文件」的方法。
+    // `VideoFileTransferable` 定义在 ChatInputBar.swift，只属于主 App 目标，
+    // 而本文件同时编入 ShareExtension / AgentWidget —— 在此引用会找不到类型。
+    // 视频加载放在调用点（AIChatView，主 App 目标内）用 #available 处理。
 }
 
 @available(iOSApplicationExtension, unavailable)
