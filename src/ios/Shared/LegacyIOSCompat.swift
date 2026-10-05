@@ -904,26 +904,36 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
     }
 
     private let host: UIHostingController<Content>
+    private weak var attachedParent: UIViewController?
 
     init(configuration: MinisLegacyHostingConfiguration<Content>) {
         self.configuration = configuration
         self.host = UIHostingController(rootView: configuration.content)
         super.init(frame: .zero)
 
-        host.view.backgroundColor = .clear
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-        if configuration.minWidth > 0 {
-            widthAnchor.constraint(greaterThanOrEqualToConstant: configuration.minWidth).isActive = true
-        }
-        if configuration.minHeight > 0 {
-            heightAnchor.constraint(greaterThanOrEqualToConstant: configuration.minHeight).isActive = true
+        // [关键] 必须把 hosting controller 作为 **child view controller** 挂上去。
+        //
+        // 只 addSubview 而不建立父子关系时，hosting controller 的视图不在
+        // view-controller 层级里：它的 traitCollection / safeAreaInsets 都是错的，
+        // SwiftUI 拿到的是一个尺寸不确定的容器。消息内容用的是
+        // `.frame(maxWidth: .infinity)`（填满单元格宽度），容器尺寸一旦不对，
+        // 整块内容就会偏移 —— 表现为正文左移、左侧被裁。
+        //
+        // 挂上父子关系后，容器尺寸与 safe area 由 UIKit 正确下发。
+        if let parent = Self.nearestViewController(from: self) {
+            parent.addChild(host)
+            host.view.backgroundColor = .clear
+            host.view.frame = bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(host.view)
+            host.didMove(toParent: parent)
+            attachedParent = parent
+        } else {
+            // 兜底：拿不到父 VC 时退化为纯子视图（至少保证尺寸跟随）。
+            host.view.backgroundColor = .clear
+            host.view.frame = bounds
+            host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(host.view)
         }
     }
 
@@ -932,9 +942,38 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        // 拆掉父子关系，避免复用/销毁时留下悬挂的 child。
+        if let parent = attachedParent, host.parent === parent {
+            host.willMove(toParent: nil)
+            host.removeFromParent()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // 确定性布局：不依赖 Auto Layout 推导 hosting 视图尺寸，
+        // 直接让它等于自身 bounds，避免尺寸推导出现偏差。
+        if host.view.frame != bounds {
+            host.view.frame = bounds
+        }
+    }
+
     private func applyConfiguration() {
         guard let cfg = configuration as? MinisLegacyHostingConfiguration<Content> else { return }
         host.rootView = cfg.content
+        setNeedsLayout()
+    }
+
+    /// 沿 responder 链向上找最近的 view controller（cell → collectionView → VC）。
+    private static func nearestViewController(from view: UIView) -> UIViewController? {
+        var node: UIResponder? = view
+        while let current = node {
+            if let vc = current as? UIViewController { return vc }
+            if let v = current as? UIView, let vc = v.next as? UIViewController { return vc }
+            node = current.next
+        }
+        return nil
     }
 }
 
