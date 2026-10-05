@@ -651,8 +651,14 @@ struct MinisGeometryValueKey<T: Equatable>: PreferenceKey {
 ///
 /// iOS 15 回退到 `UIApplication.applicationIconBadgeNumber` —— 该属性在
 /// iOS 17 起被废弃，但在 iOS 15 上正是官方做法。
+///
+/// 注意：本文件同时被编译进 ShareExtension / AgentWidget 扩展目标，
+/// 而 `UIApplication.shared` 在 App 扩展中不可用，因此这两个入口标注为
+/// `@available(iOSApplicationExtension, unavailable)`。全部调用点
+/// （`MinisApp` / `BackgroundKeepAliveManager`）都属于主 App 目标。
 enum MinisBadge {
     /// 回调形式（对应 `setBadgeCount(_:withCompletionHandler:)`）。
+    @available(iOSApplicationExtension, unavailable)
     static func set(_ count: Int, completion: @escaping (Error?) -> Void) {
         if #available(iOS 16.0, *) {
             UNUserNotificationCenter.current().setBadgeCount(count, withCompletionHandler: completion)
@@ -665,6 +671,7 @@ enum MinisBadge {
     }
 
     /// async 形式（对应 `try await setBadgeCount(_:)`）。
+    @available(iOSApplicationExtension, unavailable)
     static func setAsync(_ count: Int) async {
         if #available(iOS 16.0, *) {
             try? await UNUserNotificationCenter.current().setBadgeCount(count)
