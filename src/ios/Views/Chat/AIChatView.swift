@@ -967,7 +967,13 @@ struct AIChatView: View {
     }
     }
 
-    var body: some View {
+    /// [iOS 15 移植] `body` 修饰符链的第一段。
+    ///
+    /// 原 `body` 是 1000+ 行的单一 ViewBuilder 表达式；部署目标降到 15.4 后
+    /// 可用性检查加重约束求解负担，导致其中的语句报类型检查超时。
+    /// 把修饰符链切成三段后，每段各自成为独立表达式，求解负担显著下降。
+    @ViewBuilder
+    private var bodyStage1: some View {
         ZStack {
             // Messages — floating tool preview overlaid at bottom
             messagesArea
@@ -1385,6 +1391,12 @@ struct AIChatView: View {
         .environment(\.openMinisURL, OpenMinisURLAction { url in
             handleMinisURLTap(url)
         })
+    }
+
+    /// [iOS 15 移植] `body` 修饰符链的第二段。
+    @ViewBuilder
+    private var bodyStage2: some View {
+        bodyStage1
         .environment(\.openImageGallery, OpenImageGalleryAction { presentation in
             imageGallery = presentation
         })
@@ -1530,6 +1542,10 @@ struct AIChatView: View {
             TokenUsageSheet(vm: cached.vm)
                 .minisPresentationDetents([.fraction(0.8), .large])
         }
+    }
+
+    var body: some View {
+        bodyStage2
         .sheet(item: $screenshotPreview) { preview in
             ChatScreenshotPreviewSheet(image: preview.image)
         }
