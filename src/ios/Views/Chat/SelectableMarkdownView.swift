@@ -5283,6 +5283,31 @@ final class MinisLayoutManager: NSLayoutManager {
 
 /// Non-editable, selectable UITextView subclass for rendering Markdown as NSAttributedString.
 final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate {
+
+    // MARK: - [iOS 15 移植] 宽度感知的固有尺寸
+
+    /// 上一次上报固有尺寸所用的宽度，避免重复 invalidate 引发布局循环。
+    private var lastIntrinsicLayoutWidth: CGFloat = 0
+
+    /// `UIViewRepresentable.sizeThatFits(_:uiView:context:)` 的参数类型
+    /// `ProposedViewSize` 是 **iOS 16+**，因此该方法在 iOS 15 上**不会生效** ——
+    /// SwiftUI 会退回使用 `intrinsicContentSize`。
+    ///
+    /// 而 `UITextView` 默认的固有宽度是**整段文字不换行的完整宽度**。
+    /// 于是：内容超宽 → 文字不在屏幕宽度处换行 → 右侧被裁、正文看起来「少字」。
+    ///
+    /// 这里改为「宽度交给父级提议（noIntrinsicMetric）+ 高度按当前宽度实测」，
+    /// 让 SwiftUI 用提议宽度布局，同时拿到正确高度。
+    override var intrinsicContentSize: CGSize {
+        let w = bounds.width
+        guard w > 0, w.isFinite else {
+            // 尚无宽度信息时不要报告巨大宽度，让 SwiftUI 先用提议宽度布局。
+            return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+        }
+        let h = sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(h))
+    }
+
     private var attachmentViews: [UIView] = []
     /// Returns true if the text storage contains NSTextAttachment objects but no attachment views
     /// have been created yet. Used by updateUIView to detect the LazyVStack reappear case where
@@ -7185,6 +7210,11 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     // MARK: Layout
 
     override func layoutSubviews() {
+        // [iOS 15 移植] 宽度变化时重新上报固有高度（见 intrinsicContentSize）。
+        if abs(bounds.width - lastIntrinsicLayoutWidth) > 0.5 {
+            lastIntrinsicLayoutWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
         // TEMP(2026-05-13) — layoutSubviews slow-path probe. Most layout
         // work is fast; emit a direct-write line when a single
         // layoutSubviews pass takes >=50ms so a watchdog hang can be

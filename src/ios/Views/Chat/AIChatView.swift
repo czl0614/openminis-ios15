@@ -1663,6 +1663,10 @@ struct AIChatView: View {
                                     if let loaded = try? await sdk.loadTransferable(type: VideoFileTransferable.self) {
                                         videoURL = loaded.url
                                     }
+                                } else {
+                                    // iOS 15：PHPickerViewController 在回调里已把视频
+                                    // 复制到临时目录，直接取用（见 MinisLegacyPhotoPicker）。
+                                    videoURL = job.item.legacyVideoFile
                                 }
                                 if let videoURL {
                                     await MainActor.run {

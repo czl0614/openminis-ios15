@@ -989,37 +989,63 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
 /// ShareExtension / AgentWidget，而 PhotosPicker 只在主 App 使用。
 @available(iOSApplicationExtension, unavailable)
 struct MinisPhotosPickerItem: Hashable {
-    private let storage: Any?
+    // iOS 16 路径：包装系统的 PhotosPickerItem
+    private let sdkStorage: Any?
+    // iOS 15 路径：PHPickerViewController 已经把内容加载好，直接携带
+    private let legacyData: Data?
+    private let legacyVideoURL: URL?
+    private let legacyUTIs: [String]
 
-    init() { storage = nil }
+    init() {
+        sdkStorage = nil
+        legacyData = nil
+        legacyVideoURL = nil
+        legacyUTIs = []
+    }
 
     @available(iOS 16.0, *)
-    init(_ item: PhotosPickerItem) { storage = item }
+    init(_ item: PhotosPickerItem) {
+        sdkStorage = item
+        legacyData = nil
+        legacyVideoURL = nil
+        legacyUTIs = []
+    }
+
+    /// iOS 15 路径（PHPicker 回调里构造）。
+    init(legacyData: Data?, legacyVideoURL: URL?, legacyUTIs: [String]) {
+        sdkStorage = nil
+        self.legacyData = legacyData
+        self.legacyVideoURL = legacyVideoURL
+        self.legacyUTIs = legacyUTIs
+    }
 
     @available(iOS 16.0, *)
-    var sdkItem: PhotosPickerItem? { storage as? PhotosPickerItem }
+    var sdkItem: PhotosPickerItem? { sdkStorage as? PhotosPickerItem }
 
-    /// `Any?` 本身不是 `Hashable`，因此手写等价性：以底层 `PhotosPickerItem` 为准。
-    /// iOS 15 上所有实例都是空包装，一律视为相等。
+    /// iOS 15 上 PHPicker 已给出的视频文件 URL（临时目录副本）。
+    var legacyVideoFile: URL? { legacyVideoURL }
+
+    /// `Any?` 不满足 `Hashable`，因此手写等价性。
     static func == (lhs: MinisPhotosPickerItem, rhs: MinisPhotosPickerItem) -> Bool {
         if #available(iOS 16.0, *) {
             return lhs.sdkItem == rhs.sdkItem
         }
-        return true
+        return lhs.legacyVideoURL == rhs.legacyVideoURL && lhs.legacyData == rhs.legacyData
     }
 
     func hash(into hasher: inout Hasher) {
         if #available(iOS 16.0, *), let item = sdkItem {
             hasher.combine(item)
         } else {
-            hasher.combine(0)
+            hasher.combine(legacyVideoURL)
+            hasher.combine(legacyData)
         }
     }
 
     /// 对应 `PhotosPickerItem.supportedContentTypes`。
     var supportedContentTypes: [UTType] {
         if #available(iOS 16.0, *) { return sdkItem?.supportedContentTypes ?? [] }
-        return []
+        return legacyUTIs.compactMap { UTType($0) }
     }
 
     /// 对应 `PhotosPickerItem.itemIdentifier`。
@@ -1034,19 +1060,105 @@ struct MinisPhotosPickerItem: Hashable {
             guard let item = sdkItem else { return nil }
             return try? await item.loadTransferable(type: Data.self)
         }
-        return nil
+        return legacyData
+    }
+}
+
+/// iOS 15 的照片/视频选择器实现。
+///
+/// SwiftUI 的 `PhotosPicker` 是 iOS 16 组件，但 **`PHPickerViewController`
+/// 从 iOS 14 就有** —— 所以旧系统上不必退化成 no-op，可以直接用它实现完整功能
+/// （多选、图片与视频、按 UTI 过滤）。
+@available(iOSApplicationExtension, unavailable)
+struct MinisLegacyPhotoPicker: UIViewControllerRepresentable {
+    var selectionLimit: Int
+    var filter: PHPickerFilter
+    var onPicked: ([MinisPhotosPickerItem]) -> Void
+    var onCancel: () -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.selectionLimit = selectionLimit
+        config.filter = filter
+        config.preferredAssetRepresentationMode = .current
+        let vc = PHPickerViewController(configuration: config)
+        vc.delegate = context.coordinator
+        return vc
     }
 
-    // 注意：这里**不**提供「加载视频文件」的方法。
-    // `VideoFileTransferable` 定义在 ChatInputBar.swift，只属于主 App 目标，
-    // 而本文件同时编入 ShareExtension / AgentWidget —— 在此引用会找不到类型。
-    // 视频加载放在调用点（AIChatView，主 App 目标内）用 #available 处理。
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        private let parent: MinisLegacyPhotoPicker
+
+        init(_ parent: MinisLegacyPhotoPicker) {
+            self.parent = parent
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            guard !results.isEmpty else {
+                parent.onCancel()
+                return
+            }
+
+            let group = DispatchGroup()
+            let lock = NSLock()
+            // 按原始顺序占位，避免并发加载打乱顺序。
+            var slots = [MinisPhotosPickerItem?](repeating: nil, count: results.count)
+
+            for (index, result) in results.enumerated() {
+                let provider = result.itemProvider
+                let utis = provider.registeredTypeIdentifiers
+                let isVideo = provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier)
+
+                group.enter()
+                if isVideo {
+                    provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
+                        defer { group.leave() }
+                        guard let url else { return }
+                        // 回调返回后系统会删除原文件，必须立刻复制到临时目录。
+                        let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+                        let tmp = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("minis-pick-\(UUID().uuidString).\(ext)")
+                        do {
+                            try FileManager.default.copyItem(at: url, to: tmp)
+                        } catch {
+                            return
+                        }
+                        lock.lock()
+                        slots[index] = MinisPhotosPickerItem(legacyData: nil,
+                                                             legacyVideoURL: tmp,
+                                                             legacyUTIs: utis)
+                        lock.unlock()
+                    }
+                } else {
+                    provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                        defer { group.leave() }
+                        guard let data else { return }
+                        lock.lock()
+                        slots[index] = MinisPhotosPickerItem(legacyData: data,
+                                                             legacyVideoURL: nil,
+                                                             legacyUTIs: utis)
+                        lock.unlock()
+                    }
+                }
+            }
+
+            group.notify(queue: .main) {
+                self.parent.onPicked(slots.compactMap { $0 })
+            }
+        }
+    }
 }
 
 @available(iOSApplicationExtension, unavailable)
 extension View {
-    /// `.photosPicker(isPresented:selection:maxSelectionCount:matching:)`（iOS 16+）
-    /// 的兼容版本，多选形态。
+    /// `.photosPicker(isPresented:selection:maxSelectionCount:matching:)` 的兼容版本，多选形态。
+    ///
+    /// iOS 16+ 转发到系统 `PhotosPicker`；iOS 15 用 `PHPickerViewController`
+    /// 实现同等能力（**不是 no-op**）。
     @ViewBuilder
     func minisPhotosPicker(
         isPresented: Binding<Bool>,
@@ -1065,7 +1177,18 @@ extension View {
                 matching: matching
             )
         } else {
-            self
+            self.sheet(isPresented: isPresented) {
+                MinisLegacyPhotoPicker(
+                    selectionLimit: maxSelectionCount ?? 1,
+                    filter: matching,
+                    onPicked: { items in
+                        selection.wrappedValue = items
+                        isPresented.wrappedValue = false
+                    },
+                    onCancel: { isPresented.wrappedValue = false }
+                )
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -1088,7 +1211,18 @@ extension View {
                 matching: matching
             )
         } else {
-            self
+            self.sheet(isPresented: isPresented) {
+                MinisLegacyPhotoPicker(
+                    selectionLimit: 1,
+                    filter: matching,
+                    onPicked: { items in
+                        selection.wrappedValue = items.first
+                        isPresented.wrappedValue = false
+                    },
+                    onCancel: { isPresented.wrappedValue = false }
+                )
+                .ignoresSafeArea()
+            }
         }
     }
 }
