@@ -848,6 +848,15 @@ extension View {
 ///
 /// 用法上只需把 `cell.applyContentConfiguration(config)` 改成
 /// `cell.applyContentConfiguration(config.makeConfiguration())`。
+///
+/// [ios15-port-fix] 高度桥的清状态协议：本文件被主 App 与两个扩展目标共同
+/// 编译，而集合视图 cell（SelfSizingCell）只在主 App 目标存在——桥里不能
+/// 直接引用该类型（扩展目标编译不过），用协议解耦；扩展里没有集合视图，
+/// 运行时不会命中，实现侧（App 目标）声明遵循即可。
+protocol MinisCellMeasuredStateClearable: AnyObject {
+    func clearAllMeasuredStateForBridge()
+}
+
 struct MinisHostingConfiguration<Content: View> {
     let content: Content
     var minWidth: CGFloat = 0
@@ -965,6 +974,85 @@ final class MinisLegacyHostingContentView<Content: View>: UIView, UIContentView 
     private func applyConfiguration() {
         guard let cfg = configuration as? MinisLegacyHostingConfiguration<Content> else { return }
         host.rootView = cfg.content
+        // [ios15-port-fix] 新内容 = 一次合法的高度变化机会，重置桥熔断计数。
+        bridgeStreak = 0
+    }
+
+    // MARK: [ios15-port-fix] SwiftUI 内容高度 → 集合视图失效 的桥
+    //
+    // iOS 16 的系统 UIHostingConfiguration 在 SwiftUI 图更新后会自行通知
+    // 集合视图重新自-sizing；iOS 15 没有这条链：hosting 视图的
+    // intrinsicContentSize 失效只会弄脏 Auto Layout 引擎，没有任何东西触发
+    // UICollectionView 重新测量——内容在静止期间变化后，旧高度一直用到用户
+    // 滚动为止（真机 iOS 15.6.1 表现：局部叠压，滑一下就恢复——滚动让 cell
+    // 重新走 configure → PLAF 实测，等于手工触发了缺失的通知）。
+    //
+    // 桥的实现：layoutSubviews（intrinsic 失效会经约束系统传导到这里）→ 合并
+    // 调度一次异步实测（host 视图 systemLayoutSizeFitting，纯测量、不触发布局
+    // 重入）→ 与上次桥值差 >1pt → 找到 SelfSizingCell 清全部实测状态 + 对集
+    // 合视图 invalidateLayout（UIKit 自带按 tick 合并）。连续 4 次未收敛即熔
+    // 断，防测量振荡；新配置到达时重置。
+    private var bridgedHeight: CGFloat = 0
+    private var bridgeScheduled = false
+    private var bridgeStreak = 0
+    private var lastBridgeCheckAt: CFTimeInterval = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scheduleBridgeCheck()
+    }
+
+    private func scheduleBridgeCheck() {
+        guard !bridgeScheduled, bridgeStreak < 4 else { return }
+        // [ios15-port-fix/v4] 节流：布局密集期（流式每个 chunk 一轮）每 0.25s
+        // 至多探测一次，避免每 tick 每可见 cell 都跑一次 SwiftUI 测量。
+        let now = CACurrentMediaTime()
+        guard now - lastBridgeCheckAt >= 0.25 else { return }
+        lastBridgeCheckAt = now
+        bridgeScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.bridgeScheduled = false
+            self.bridgeHostHeightIfNeeded()
+        }
+    }
+
+    private func bridgeHostHeightIfNeeded() {
+        guard host.view.window != nil, bounds.width > 1 else { return }
+        // [ios15-port-fix/v4] 改用 sizeThatFits（UIView 契约上的纯查询，全高
+        // 提议）。v3 用 systemLayoutSizeFitting(…, height: compressed≈0) 直接
+        // 量宿主视图——UIHostingView 会在这次测量里以 0 高提议跑一遍 SwiftUI
+        // 布局，事后把内部状态留在偏大值，下一轮 PLAF 量出偏大高度 → cell
+        // 偏高 → 空白间距（真机 v3 报告：叠压没了但间距变宽）。
+        let fit = host.view.sizeThatFits(
+            CGSize(width: bounds.width, height: .greatestFiniteMagnitude)
+        ).height
+        guard fit.isFinite, fit > 0 else { return }
+        if abs(fit - bridgedHeight) <= 1 {
+            // 收敛：高度与上次桥值一致，重置熔断计数。
+            bridgeStreak = 0
+            return
+        }
+        // [ios15-port-fix/v4] 防误报：SwiftUI 理想高度与当前已布局高度一致时
+        // 没有漂移，不触发（同时避免桥的首次探测对每个 cell 空放一轮）。
+        if abs(fit - bounds.height) <= 2 {
+            bridgedHeight = fit
+            return
+        }
+        bridgedHeight = fit
+        bridgeStreak += 1
+        var node: UIView? = self
+        var foundCell: UICollectionViewCell?
+        var foundCollectionView: UICollectionView?
+        while let cur = node {
+            if foundCell == nil, let c = cur as? UICollectionViewCell { foundCell = c }
+            if foundCollectionView == nil, let v = cur as? UICollectionView { foundCollectionView = v }
+            node = cur.superview
+        }
+        (foundCell as? MinisCellMeasuredStateClearable)?.clearAllMeasuredStateForBridge()
+        foundCollectionView?.collectionViewLayout.invalidateLayout()
+        // 下一拍复查：确认 cell 已按新高度布局并收敛（或继续修正直到熔断）。
+        scheduleBridgeCheck()
     }
 
     /// 沿 responder 链向上找最近的 view controller（cell → collectionView → VC）。

@@ -34,7 +34,31 @@ final class MessageListLayout: UICollectionViewLayout {
         estimatedHeights[index] = height
     }
 
+    /// [ios15-port-fix] iOS 15 兼容总开关：所有「跳过实测」的高度捷径在
+    /// iOS 15 上全部关闭，高度一律实时测量。
+    ///
+    /// 背景：precalc 的校准系数（估算比真实渲染每行紧 ~2.4pt、CJK 平铺
+    /// +7pt）是在上游 iOS 16 的 SwiftUI 渲染上标定的，iOS 15 上偏差随行数
+    /// 放大；v1 只关了 precalc，真机反馈（iOS 15.6.1 / iPhone 13 mini）显示
+    /// 间歇性仍会出现整屏消息叠压。残余路径有两条：
+    ///   1. deferSelfSizing（浏览模式）把高度修正 parked 进 deferredHeights，
+    ///      只有滚动结束才消化——用户停在原地不动时，修正可以无限期滞留
+    ///      （上游 [T-ios-defer-retry-never-consumed] 记录过同类现场：
+    ///      "~197pt 的错误留在屏幕上，用户得以截图"）。
+    ///   2. PLAF 的 dedup/宽缓存捷径复用在宽度或内容瞬态期间量出的高度。
+    /// iOS 15 上宁可每次多花 ~2.5–3.8ms 实测，也要保证高度与真实渲染一致；
+    /// iOS 16+ 行为一字不变。
+    var legacySelfSizingStrict: Bool {
+        if #available(iOS 16.0, *) { return false }
+        return true
+    }
+
+    /// [ios15-port-fix] iOS 15 是否启用 precalc 高度捷径（现并入总开关）。
+    private var precalcEnabled: Bool { !legacySelfSizingStrict }
+
     func setPrecalcHeight(_ height: CGFloat, at index: Int) {
+        // [ios15-port-fix] iOS 15 不再写入 precalc（原因见 legacySelfSizingStrict）。
+        guard precalcEnabled else { return }
         // Don't overwrite if we already have a real measured height.
         guard heightCache[index] == nil else { return }
         precalcHeights[index] = height
@@ -193,7 +217,7 @@ final class MessageListLayout: UICollectionViewLayout {
             let h: CGFloat
             if let cached = heightCache[i] {
                 h = cached
-            } else if let precalc = precalcHeights[i] {
+            } else if precalcEnabled, let precalc = precalcHeights[i] {
                 h = precalc
             } else if let est = estimatedHeights[i] {
                 h = est
@@ -388,7 +412,10 @@ final class MessageListLayout: UICollectionViewLayout {
         // BUT allow first-time measurement (no cached height) so newly
         // scrolled-into-view cells render at correct size immediately
         // instead of being truncated to the estimated height.
-        if deferSelfSizing {
+        // [ios15-port-fix] iOS 15 不再搁置任何修正：deferSelfSizing 只在
+        // iOS 16+ 生效。iOS 15 上浏览模式期间到达的每个修正都立即走
+        // invalidate → 全量 reflow，杜绝「修正滞留到下次滚动」的叠压。
+        if deferSelfSizing, !legacySelfSizingStrict {
             let hasCached = heightCache[index] != nil
             if hasCached {
                 // Cell is growing (streaming text) — allow it through so the
@@ -815,12 +842,13 @@ final class MessageListLayout: UICollectionViewLayout {
     }
 
     /// Check if a precalculated height exists for this index.
+    /// [ios15-port-fix] iOS 15 恒返回 nil——流式 cell 因此退回真实测量路径。
     func precalcHeight(at index: Int) -> CGFloat? {
-        precalcHeights[index]
+        precalcEnabled ? precalcHeights[index] : nil
     }
 
     func hasPrecalcHeight(at index: Int) -> Bool {
-        precalcHeights[index] != nil
+        precalcEnabled && precalcHeights[index] != nil
     }
 
     // MARK: - [T-ios-scroll-decel-height-drift] Content-keyed real-height memo
